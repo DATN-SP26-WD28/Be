@@ -1,0 +1,31 @@
+{
+  "name": "datn-be-wd28",
+  "version": "1.0.0",
+  "description": "",
+  "homepage": "https://github.com/DATN-SP26-WD28/Be#readme",
+  "bugs": {
+    "url": "https://github.com/DATN-SP26-WD28/Be/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DATN-SP26-WD28/Be.git"
+  },
+  "license": "MIT",
+  "author": "WD28",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "dev": "nodemon index.js"
+  },
+   "devDependencies": {
+    "nodemon": "^3.1.11"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^9.0.1",
+    "zod": "^4.1.13"
+  }
+}
