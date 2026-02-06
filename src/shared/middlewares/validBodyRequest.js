@@ -1,20 +1,18 @@
-import z from "zod";
-
+// File: src/shared/middlewares/validBodyRequest.js
 const validBodyRequest = (schema) => async (req, res, next) => {
   try {
-    const data = await schema.parse(req.body);
-    console.log(data);
-    req.data;
-    next();
+    const data = await schema.parseAsync(req.body);
+    req.body = data;
+    next(); // <--- Phải có dòng này để chạy tiếp sang Controller
   } catch (error) {
-    const errors = error.issues.map((item) => `${item.path}: ${item.message}`);
     if (error instanceof z.ZodError) {
+      const errors = error.issues.map((item) => `${item.path.join(".")}: ${item.message}`);
       return res.status(400).json({
-        message: "Bad request",
-        error: errors || "Error body request!",
+        message: "Dữ liệu không hợp lệ",
+        errors: errors,
       });
     }
+    next(error); 
   }
 };
-
-export default validBodyRequest;
+export default validBodyRequest
