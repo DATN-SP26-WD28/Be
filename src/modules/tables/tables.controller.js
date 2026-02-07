@@ -26,3 +26,22 @@ export const getAllTables = handleAsync(async (req, res) => {
   return createResponse(res, 200, 'Lấy danh sách bàn thành công', tables);
 });
 
+// --- DÀNH CHO NGƯỜI DÙNG ---
+
+// 3. Khách quét mã QR (Check-in)
+export const checkInTable = handleAsync(async (req, res) => {
+  const { table_number } = req.params;
+
+  const table = await Table.findOne({ table_number });
+  if (!table) throw createError(res, 404, 'Không tìm thấy bàn');
+
+  if (table.status === 'occupied') {
+    return createResponse(res, 200, 'Bàn đang được sử dụng, bạn có muốn tham gia nhóm đặt món không?', table);
+  }
+
+  // Cập nhật trạng thái bàn sang đang sử dụng
+  table.status = 'occupied';
+  await table.save();
+
+  return createResponse(res, 200, 'Check-in thành công. Chào mừng quý khách!', table);
+});
