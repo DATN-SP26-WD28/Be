@@ -20,3 +20,9 @@ export const createTable = handleAsync(async (req, res) => {
   return createResponse(res, 201, 'Tạo bàn thành công', newTable);
 });
 
+// 2. Lấy danh sách tất cả bàn (để Admin quản lý)
+export const getAllTables = handleAsync(async (req, res) => {
+  const tables = await Table.find().sort({ table_number: 1 });
+  return createResponse(res, 200, 'Lấy danh sách bàn thành công', tables);
+});
+
