@@ -23,3 +23,26 @@ export const createStation = handleAsync(async (req, res) => {
   return createResponse(res, 201, 'Thêm trạm mới thành công', newStation);
 });
 
+// 3. Cập nhật thông tin trạm (Sửa IP máy in, tên trạm...)
+export const updateStation = handleAsync(async (req, res) => {
+  const { id } = req.params;
+  const updatedStation = await Station.findByIdAndUpdate(id, req.body, { new: true });
+
+  if (!updatedStation) {
+    throw createError(res, 404, 'Không tìm thấy trạm cần cập nhật');
+  }
+
+  return createResponse(res, 200, 'Cập nhật trạm thành công', updatedStation);
+});
+
+// 4. Xóa trạm
+export const deleteStation = handleAsync(async (req, res) => {
+  const { id } = req.params;
+  const deletedStation = await Station.findByIdAndDelete(id);
+
+  if (!deletedStation) {
+    throw createError(res, 404, 'Không tìm thấy trạm cần xóa');
+  }
+
+  return createResponse(res, 200, 'Đã xóa trạm thành công');
+});
