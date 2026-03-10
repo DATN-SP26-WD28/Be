@@ -1,9 +1,9 @@
-import User from './auth.model.js';
 import jwt from 'jsonwebtoken';
 import handleAsync  from '../../shared/utils/handleAsync.js';
 import createResponse  from '../../shared/utils/createResponse.js';
 import  createError  from '../../shared/utils/createError.js';
 import bcrypt from 'bcryptjs'
+import User from './auth.model.js';
 
 export const register = handleAsync(async (req, res) => {
   const { email, password, username, phone, role } = req.body;

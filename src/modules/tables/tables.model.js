@@ -1,16 +1,15 @@
 import mongoose from 'mongoose';
 
 const tableSchema = new mongoose.Schema({
-  table_number: { type: String, required: true, unique: true },
-  capacity: { type: Number, default: 4 }, // Số lượng người ngồi tối đa
+  name: { type: String, required: true },
+  capacity: { type: Number, required: true },
   status: { 
     type: String, 
     enum: ['available', 'occupied', 'reserved', 'out_of_service'], 
     default: 'available' 
   },
-  qr_code: { type: String }, // Link hoặc mã định danh để tạo QR
-  current_cart_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Cart' } // Giỏ hàng hiện tại của bàn
+  token: { type: String }, // Mã định danh duy nhất cho QR
+  current_order_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Order' }
 }, { timestamps: true });
 
-const Table = mongoose.model('Table', tableSchema);
-export default Table;
+export default mongoose.model('Table', tableSchema);
