@@ -3,8 +3,8 @@ import authRouter from "../modules/auth/auth.routes.js";
 import tablesRouter from "../modules/tables/tables.routes.js";
 import categoriesRouter from "../modules/categories/categories.routes.js";
 import dishesRouter from "../modules/dishes/dishes.routes.js";
-import stationsRouter from "../modules/stations/stations.routes.js";
-import queuesRouter from "../modules/Queues/queues.routes.js";
+import cartRouter from "../modules/cart/cart.routes.js";
+
 
 const router = Router();
 
@@ -12,8 +12,8 @@ router.use("/auth", authRouter);
 router.use("/tables", tablesRouter);
 router.use("/categories", categoriesRouter);
 router.use("/dishes", dishesRouter);
-router.use("/stations", stationsRouter);
-router.use("/queues", queuesRouter);
+router.use("/cart", cartRouter);
+
 
 
 export default router;

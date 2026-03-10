@@ -1,15 +1,33 @@
 import mongoose from 'mongoose';
 
 const tableSchema = new mongoose.Schema({
-  name: { type: String, required: true },
-  capacity: { type: Number, required: true },
-  status: { 
-    type: String, 
-    enum: ['available', 'occupied', 'reserved', 'out_of_service'], 
-    default: 'available' 
+  table_number: {
+    type: Number,
+    required: [true, 'Vui lòng nhập số bàn'],
+    unique: true // Đảm bảo không trùng số bàn
   },
-  token: { type: String }, // Mã định danh duy nhất cho QR
-  current_order_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Order' }
-}, { timestamps: true });
+  capacity: {
+    type: Number,
+    required: [true, 'Vui lòng nhập sức chứa (số người)'],
+    default: 4
+  },
+  status: {
+    type: String,
+    enum: ['available', 'occupied', 'reserved', 'out_of_service'],
+    default: 'available'
+  },
+  qr_code: {
+    type: String,
+    default: '' // Bạn có thể lưu link hoặc mã định danh để khách quét tại bàn
+  },
+  location: {
+    type: String, // Ví dụ: 'Tầng 1', 'Ngoài trời', 'Phòng VIP'
+    trim: true
+  }
+}, {
+  timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
+});
 
-export default mongoose.model('Table', tableSchema);
+const Table = mongoose.model('Table', tableSchema);
+
+export default Table;
