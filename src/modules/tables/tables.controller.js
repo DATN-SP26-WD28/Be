@@ -8,21 +8,21 @@ import Table from './tables.model.js';
 
 // 1. Tạo bàn mới và tạo mã QR tự động
 export const createTable = handleAsync(async (req, res) => {
-  const { name, capacity } = req.body;
+  const { table_number, capacity } = req.body;
   
-  const existingTable = await Table.findOne({ name });
+  const existingTable = await Table.findOne({ table_number });
   if (existingTable) throw createError(res, 400, 'Số bàn này đã tồn tại');
 
   // Giả sử link QR dẫn đến Frontend: https://roosta.vn/table/T01
-  const qr_code = `${process.env.CLIENT_URL}/table/${name}`;
+  const qr_code = `${process.env.CLIENT_URL}/table/${table_number}`;
 
-  const newTable = await Table.create({ name, capacity, qr_code });
+  const newTable = await Table.create({ table_number, capacity, qr_code });
   return createResponse(res, 201, 'Tạo bàn thành công', newTable);
 });
 
 // 2. Lấy danh sách tất cả bàn (để Admin quản lý)
 export const getAllTables = handleAsync(async (req, res) => {
-  const tables = await Table.find().sort({ name: 1 });
+  const tables = await Table.find().sort({ table_number: 1 });
   return createResponse(res, 200, 'Lấy danh sách bàn thành công', tables);
 });
 
@@ -30,9 +30,9 @@ export const getAllTables = handleAsync(async (req, res) => {
 
 // 3. Khách quét mã QR (Check-in)
 export const checkInTable = handleAsync(async (req, res) => {
-  const { name } = req.params;
+  const { table_number } = req.params;
 
-  const table = await Table.findOne({ name });
+  const table = await Table.findOne({ table_number });
   if (!table) throw createError(res, 404, 'Không tìm thấy bàn');
 
   if (table.status === 'occupied') {
