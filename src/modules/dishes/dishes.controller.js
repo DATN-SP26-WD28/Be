@@ -8,12 +8,12 @@ export const createDish = handleAsync(async (req, res) => {
 });
 
 export const getDishes = handleAsync(async (req, res) => {
-  const dishes = await Dish.find().populate("category");
+  const dishes = await Dish.find().populate("category_id");
   res.status(200).json(createResponse(dishes));
 });
 
 export const getDishById = handleAsync(async (req, res) => {
-  const dish = await Dish.findById(req.params.id).populate("category");
+  const dish = await Dish.findById(req.params.id).populate("category_id");
   res.status(200).json(createResponse(dish));
 });
 
