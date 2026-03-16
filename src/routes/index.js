@@ -7,6 +7,7 @@ import dishesRouter from "../modules/dishes/dishes.routes.js";
 import cartRouter from "../modules/cart/cart.routes.js";
 import ordersRouter from "../modules/orders/orders.routes.js";
 import orderItemsRouter from "../modules/order_items/order_items.routes.js";
+import orderItemStatusHistoryRouter from "../modules/order_item_status_history/OrderItemStatusHistory.routes.js";
 
 const router = Router();
 
@@ -17,5 +18,6 @@ router.use("/dishes", dishesRouter);
 router.use("/cart", cartRouter);
 router.use("/orders", ordersRouter);
 router.use("/order-items", orderItemsRouter);
+router.use("/order-item-history", orderItemStatusHistoryRouter);
 
 export default router;
