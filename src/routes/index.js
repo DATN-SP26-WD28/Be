@@ -9,6 +9,7 @@ import ordersRouter from "../modules/orders/orders.routes.js";
 import orderItemsRouter from "../modules/order_items/order_items.routes.js";
 import orderItemStatusHistoryRouter from "../modules/order_item_status_history/OrderItemStatusHistory.routes.js";
 import OrderStatusHistoryRouter from "../modules/order_status_history/OrderStatusHistory.routes.js";
+import invoicesRouter from "../modules/invoice/Invoice.routes.js";
 
 const router = Router();
 
@@ -21,5 +22,6 @@ router.use("/orders", ordersRouter);
 router.use("/order-items", orderItemsRouter);
 router.use("/order-item-history", orderItemStatusHistoryRouter);
 router.use("/order-status-history", OrderStatusHistoryRouter);
+router.use("/invoices", invoicesRouter);
 
 export default router;
