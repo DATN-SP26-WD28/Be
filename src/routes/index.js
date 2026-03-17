@@ -8,6 +8,7 @@ import cartRouter from "../modules/cart/cart.routes.js";
 import ordersRouter from "../modules/orders/orders.routes.js";
 import orderItemsRouter from "../modules/order_items/order_items.routes.js";
 import orderItemStatusHistoryRouter from "../modules/order_item_status_history/OrderItemStatusHistory.routes.js";
+import OrderStatusHistoryRouter from "../modules/order_status_history/OrderStatusHistory.routes.js";
 
 const router = Router();
 
@@ -19,5 +20,6 @@ router.use("/cart", cartRouter);
 router.use("/orders", ordersRouter);
 router.use("/order-items", orderItemsRouter);
 router.use("/order-item-history", orderItemStatusHistoryRouter);
+router.use("/order-status-history", OrderStatusHistoryRouter);
 
 export default router;
