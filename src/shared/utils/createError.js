@@ -1,7 +1,8 @@
-const createError = (status, message) => {
-  const error = new Error(message);
-  error.status = status;
-  return error;
-};
+function createError(res, status, message, err) {
+  return res.status(status || 500).json({
+    message: message || "Server Error!",
+    err,
+  });
+}
 
 export default createError;

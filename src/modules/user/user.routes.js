@@ -7,13 +7,12 @@ const userRouter = express.Router();
 
 userRouter.use(protect);
 
-userRouter.get("/me", getMe);             // Xem hồ sơ cá nhân
-userRouter.patch("/update-me", updateMe); // Chỉnh sửa hồ sơ cá nhân
-userRouter.get("/my-orders", getMyOrders); // Xem lịch sử đơn hàng
-
+userRouter.get("/me", getMe);
+userRouter.patch("/update-me", updateMe);
+userRouter.get("/my-orders", getMyOrders);
 // --- CHỈ ADMIN MỚI ĐƯỢC VÀO ---
 
-userRouter.get("/", getAllUsers);         // Lấy danh sách tất cả User
-userRouter.patch("/lock-user/:id", toggleUserStatus);  // khoá người dùng
+userRouter.get("/", getAllUsers);
+userRouter.patch("/lock-user/:id", toggleUserStatus);
 
 export default userRouter;
