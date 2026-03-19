@@ -11,10 +11,12 @@ import orderItemStatusHistoryRouter from "../modules/order_item_status_history/O
 import OrderStatusHistoryRouter from "../modules/order_status_history/OrderStatusHistory.routes.js";
 import invoicesRouter from "../modules/invoice/Invoice.routes.js";
 import paymentRouter from "../modules/payment/payments.routes.js";
+import userRouter from "../modules/user/user.routes.js";
 
 const router = Router();
 
 router.use("/auth", authRouter);
+router.use("/users", userRouter);
 router.use("/tables", tablesRouter);
 router.use("/categories", categoriesRouter);
 router.use("/dishes", dishesRouter);
