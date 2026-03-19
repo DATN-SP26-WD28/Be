@@ -29,6 +29,11 @@ const userSchema = new mongoose.Schema({
     type: String,
     enum: ['customer', 'waiter', 'cashier', 'chef', 'admin'],
     default: 'customer'
+  },
+  status: {
+    type: String,
+    enum: ['active', 'banned'],
+    default: 'active'
   }
 }, {
   timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
