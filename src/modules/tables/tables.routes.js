@@ -1,5 +1,5 @@
 import express from 'express';
-import { checkInTable, createTable, getAllTables } from './tables.controller.js';
+import { checkInTable, createTable, getAllTables, updateTable, deleteTable } from './tables.controller.js';
 // Giả sử bạn đã có middleware verifyToken và checkRole
 // import { verifyToken, isAdmin } from '../../shared/middlewares/auth.js';
 
@@ -11,5 +11,7 @@ tablesRouter.get('/check-in/:table_number', checkInTable);
 // Private: Admin quản lý
 tablesRouter.post('/', createTable); 
 tablesRouter.get('/', getAllTables); 
+tablesRouter.put('/:id', updateTable);
+tablesRouter.delete('/:id', deleteTable);
 
 export default tablesRouter;

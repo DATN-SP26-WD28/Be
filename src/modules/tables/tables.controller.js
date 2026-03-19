@@ -45,3 +45,36 @@ export const checkInTable = handleAsync(async (req, res) => {
 
   return createResponse(res, 200, 'Check-in thành công. Chào mừng quý khách!', table);
 });
+
+// 4. Cập nhật thông tin bàn
+export const updateTable = handleAsync(async (req, res) => {
+  const { id } = req.params;
+  const { table_number, capacity, status, location } = req.body;
+
+  const table = await Table.findById(id);
+  if (!table) throw createError(res, 404, 'Không tìm thấy bàn');
+
+  if (table_number && table_number !== table.table_number) {
+    const existingTable = await Table.findOne({ table_number });
+    if (existingTable) throw createError(res, 400, 'Số bàn này đã tồn tại');
+    
+    // Cập nhật QR code nếu số bàn thay đổi
+    table.qr_code = `${process.env.CLIENT_URL}/table/${table_number}`;
+  }
+
+  table.table_number = table_number || table.table_number;
+  table.capacity = capacity || table.capacity;
+  table.status = status || table.status;
+  table.location = location || table.location;
+
+  await table.save();
+  return createResponse(res, 200, 'Cập nhật bàn thành công', table);
+});
+
+// 5. Xóa bàn
+export const deleteTable = handleAsync(async (req, res) => {
+  const { id } = req.params;
+  const table = await Table.findByIdAndDelete(id);
+  if (!table) throw createError(res, 404, 'Không tìm thấy bàn');
+  return createResponse(res, 200, 'Xóa bàn thành công');
+});
