@@ -1,4 +1,5 @@
-// File: src/shared/middlewares/validBodyRequest.js
+import { z } from 'zod'
+
 const validBodyRequest = (schema) => async (req, res, next) => {
   try {
     const data = await schema.parseAsync(req.body);
@@ -12,7 +13,7 @@ const validBodyRequest = (schema) => async (req, res, next) => {
         errors: errors,
       });
     }
-    next(error); 
+    next(error);
   }
 };
 export default validBodyRequest
