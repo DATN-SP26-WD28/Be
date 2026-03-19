@@ -14,7 +14,7 @@ export const createTable = handleAsync(async (req, res) => {
   if (existingTable) throw createError(res, 400, 'Số bàn này đã tồn tại');
 
   // Giả sử link QR dẫn đến Frontend: https://roosta.vn/table/T01
-  const qr_code = `${process.env.CLIENT_URL}/table/${table_number}`;
+  const qr_code = `${process.env.CLIENT_URL || 'http://localhost:5173'}/table/${table_number}`;
 
   const newTable = await Table.create({ table_number, capacity, qr_code });
   return createResponse(res, 201, 'Tạo bàn thành công', newTable);
@@ -59,7 +59,7 @@ export const updateTable = handleAsync(async (req, res) => {
     if (existingTable) throw createError(res, 400, 'Số bàn này đã tồn tại');
     
     // Cập nhật QR code nếu số bàn thay đổi
-    table.qr_code = `${process.env.CLIENT_URL}/table/${table_number}`;
+    table.qr_code = `${process.env.CLIENT_URL || 'http://localhost:5173'}/table/${table_number}`;
   }
 
   table.table_number = table_number || table.table_number;
@@ -77,4 +77,4 @@ export const deleteTable = handleAsync(async (req, res) => {
   const table = await Table.findByIdAndDelete(id);
   if (!table) throw createError(res, 404, 'Không tìm thấy bàn');
   return createResponse(res, 200, 'Xóa bàn thành công');
-});
+});
