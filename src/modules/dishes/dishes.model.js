@@ -12,10 +12,11 @@ const dishSchema = new mongoose.Schema(
     price: { type: mongoose.Schema.Types.Decimal128, required: true },
     status: {
       type: String,
-      enum: ['available', 'out_of_stock'],
-      default: 'available',
+      enum: ["available", "out_of_stock"],
+      default: "available",
     },
     image_url: { type: String, maxLength: 255 },
+    is_deleted: { type: Boolean, default: false },
   },
   { timestamps: true },
 );
