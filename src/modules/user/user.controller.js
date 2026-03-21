@@ -1,7 +1,8 @@
 import createResponse from "../../shared/utils/createResponse.js";
 import handleAsync from "../../shared/utils/handleAsync.js";
-import User from "../auth/auth.model.js";
+import User from "./user.model.js";
 import { Order } from "../orders/orders.model.js";
+import bcrypt from 'bcryptjs';
 
 // 1. Khách xem hồ sơ của chính mình
 export const getMe = handleAsync(async (req, res) => {
@@ -32,9 +33,21 @@ export const getMyOrders = handleAsync(async (req, res) => {
     createResponse(res, 200, "Lấy lịch sử đơn hàng thành công", orders);
 });
 
-// 4. Admin lấy tất cả người dùng
+// 4. Admin lấy tất cả nhân viên (rol khác customer)
+export const getStaff = handleAsync(async (req, res) => {
+    const staff = await User.find({ role: { $ne: 'customer' } }).sort({ created_at: -1 });
+    createResponse(res, 200, "Lấy danh sách nhân viên thành công", staff);
+});
+
+// 4.1. Admin lấy tất cả khách hàng (role = customer)
+export const getCustomers = handleAsync(async (req, res) => {
+    const customers = await User.find({ role: 'customer' }).sort({ created_at: -1 });
+    createResponse(res, 200, "Lấy danh sách khách hàng thành công", customers);
+});
+
+// 4.2. Admin lấy tất cả người dùng (deprecated - dùng getStaff hoặc getCustomers)
 export const getAllUsers = handleAsync(async (req, res) => {
-    const users = await User.find();
+    const users = await User.find().sort({ created_at: -1 });
     createResponse(res, 200, "Lấy danh sách người dùng thành công", users);
 });
 
@@ -52,4 +65,111 @@ export const toggleUserStatus = handleAsync(async (req, res) => {
 
     const message = user.status === 'banned' ? "Đã khóa tài khoản" : "Đã mở khóa tài khoản";
     createResponse(res, 200, message, user);
+});
+
+// 6. Admin tạo người dùng mới (Customer)
+export const createUser = handleAsync(async (req, res) => {
+    const { name, email, phone, password } = req.body;
+
+    // Kiểm tra các trường bắt buộc
+    if (!name || !email || !phone) {
+        return createResponse(res, 400, "Vui lòng cung cấp đầy đủ thông tin: name, email, phone");
+    }
+
+    // Validate username (chỉ chứa chữ)
+    if (!/^[a-zA-Z\s]+$/.test(name)) {
+        return createResponse(res, 400, "Tên người dùng không hợp lệ (chỉ chứa chữ)");
+    }
+
+    // Validate phone (10-11 chữ số)
+    if (!/^[0-9]{10,11}$/.test(phone)) {
+        return createResponse(res, 400, "Số điện thoại không hợp lệ (chỉ chứa 10-11 chữ số)");
+    }
+
+    // Kiểm tra email đã tồn tại
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+        return createResponse(res, 409, "Email đã tồn tại");
+    }
+
+    // Kiểm tra username đã tồn tại
+    const existingUsername = await User.findOne({ username: name });
+    if (existingUsername) {
+        return createResponse(res, 409, "Tên đăng nhập đã tồn tại");
+    }
+
+    // Hash password
+    const defaultPassword = password || '123456';
+    const hashedPassword = await bcrypt.hash(defaultPassword, 10);
+
+    const newUser = await User.create({
+        username: name, // Map "name" từ frontend thành "username" ở backend
+        email,
+        phone,
+        role: 'customer', // Luôn set role là customer
+        password: hashedPassword
+    });
+
+    createResponse(res, 201, "Tạo người dùng thành công", newUser);
+});
+
+// 7. Admin cập nhật thông tin người dùng
+export const updateUser = handleAsync(async (req, res) => {
+    const { id } = req.params;
+    const { name, email, phone, password } = req.body;
+
+    const user = await User.findById(id);
+    if (!user) {
+        return createResponse(res, 404, "Không tìm thấy người dùng");
+    }
+
+    // Validate username (chỉ chứa chữ) nếu được cập nhật
+    if (name && !/^[a-zA-Z\s]+$/.test(name)) {
+        return createResponse(res, 400, "Tên người dùng không hợp lệ (chỉ chứa chữ)");
+    }
+
+    // Validate phone (10-11 chữ số) nếu được cập nhật
+    if (phone && !/^[0-9]{10,11}$/.test(phone)) {
+        return createResponse(res, 400, "Số điện thoại không hợp lệ (chỉ chứa 10-11 chữ số)");
+    }
+
+    // Kiểm tra email đã tồn tại (nếu email được cập nhật)
+    if (email && email !== user.email) {
+        const existingUser = await User.findOne({ email });
+        if (existingUser) {
+            return createResponse(res, 409, "Email đã tồn tại");
+        }
+    }
+
+    // Kiểm tra username đã tồn tại (nếu username được cập nhật)
+    if (name && name !== user.username) {
+        const existingUsername = await User.findOne({ username: name });
+        if (existingUsername) {
+            return createResponse(res, 409, "Tên đăng nhập đã tồn tại");
+        }
+    }
+
+    // Cập nhật các trường được cung cấp (KHÔNG cập nhật role)
+    if (name) user.username = name;
+    if (email) user.email = email;
+    if (phone) user.phone = phone;
+    if (password) {
+        user.password = await bcrypt.hash(password, 10);
+    }
+
+    const updatedUser = await user.save();
+
+    createResponse(res, 200, "Cập nhật người dùng thành công", updatedUser);
+});
+
+// 8. Admin xóa người dùng
+export const deleteUser = handleAsync(async (req, res) => {
+    const { id } = req.params;
+
+    const user = await User.findByIdAndDelete(id);
+    if (!user) {
+        return createResponse(res, 404, "Không tìm thấy người dùng");
+    }
+
+    createResponse(res, 200, "Xóa người dùng thành công", user);
 });
