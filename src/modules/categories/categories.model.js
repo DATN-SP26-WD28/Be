@@ -7,24 +7,24 @@ const categorySchema = new mongoose.Schema(
       required: true,
       unique: true,
       trim: true,
-      maxLength: 100,
+      maxLength: 100
     },
     description: {
-      type: String,
+      type: String
     },
     image_url: {
       type: String,
-      maxLength: 255,
+      maxLength: 255
     },
     status: {
       type: Boolean,
-      default: true,
+      default: true
     },
-    is_deleted: { type: Boolean, default: false },
   },
   {
     timestamps: true,
-  },
+
+  }
 );
 
 const Category = mongoose.model("Category", categorySchema);
