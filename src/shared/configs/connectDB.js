@@ -7,8 +7,9 @@ function connectDB() {
     .then(() => {
       console.log(`Connected database successfully!`);
     })
-    .catch(() => {
-      console.log(`Connect database failed!`);
+    .catch((error) => {
+      console.error(`Connect database failed!`, error.message || error);
+      process.exit(1);
     });
 }
 export default connectDB;

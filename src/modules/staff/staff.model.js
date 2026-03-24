@@ -22,6 +22,7 @@ const staffSchema = new mongoose.Schema({
   phone: {
     type: String,
     required: [true, 'Vui lòng nhập số điện thoại'],
+    unique: true,
     trim: true,
     match: [/^[0-9]{10,11}$/, 'Số điện thoại không hợp lệ']
   },

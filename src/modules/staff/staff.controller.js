@@ -39,6 +39,12 @@ export const createStaff = handleAsync(async (req, res) => {
         return createResponse(res, 409, "Tên nhân viên đã tồn tại");
     }
 
+    // Kiểm tra phone đã tồn tại
+    const existingPhone = await Staff.findOne({ phone });
+    if (existingPhone) {
+        return createResponse(res, 409, "Số điện thoại đã được sử dụng bởi nhân viên khác");
+    }
+
     // Hash password
     const defaultPassword = password || '123456';
     const hashedPassword = await bcrypt.hash(defaultPassword, 10);
@@ -79,6 +85,14 @@ export const updateStaff = handleAsync(async (req, res) => {
         const existingUsername = await Staff.findOne({ username });
         if (existingUsername) {
             return createResponse(res, 409, "Tên nhân viên đã tồn tại");
+        }
+    }
+
+    // Kiểm tra phone đã tồn tại (nếu phone được cập nhật)
+    if (phone && phone !== staff.phone) {
+        const existingPhone = await Staff.findOne({ phone });
+        if (existingPhone) {
+            return createResponse(res, 409, "Số điện thoại đã được sử dụng bởi nhân viên khác");
         }
     }
 
