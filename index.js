@@ -6,7 +6,7 @@ import notFoundRequest from "./src/shared/middlewares/notFoundRequest.js";
 import cors from "cors";
 import morgan from "morgan";
 import cookieParser from "cookie-parser"
- import 'dotenv/config'
+import 'dotenv/config'
 
 const app = express();
 app.use(cookieParser())
@@ -36,14 +36,14 @@ app.use(notFoundRequest);
 
 // PHẢI CÓ ĐỦ 4 THAM SỐ: err, req, res, next
 app.use((err, req, res, next) => {
-  console.error(">>> LOG LỖI:", err); 
+  console.error(">>> LOG LỖI:", err);
 
   // Handle Mongoose Validation Errors
   if (err.name === 'ValidationError') {
     const messages = Object.values(err.errors)
       .map(error => error.message)
       .join(', ');
-    
+
     return res.status(400).json({
       status: 'error',
       message: messages || 'Dữ liệu không hợp lệ',
@@ -62,7 +62,7 @@ app.use((err, req, res, next) => {
 
   // Default error handler
   const statusCode = err.status || 500;
-  
+
   res.status(statusCode).json({
     status: statusCode >= 400 && statusCode < 500 ? 'error' : 'error',
     message: err.message || "Lỗi cơ sở dữ liệu",
