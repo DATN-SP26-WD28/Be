@@ -9,8 +9,11 @@ const dishSchema = new mongoose.Schema(
       required: true,
     },
     description: { type: String },
-    price: { type: mongoose.Schema.Types.Decimal128, required: true },
-    status: {
+    price: {
+      type: Number,
+      required: true,
+      min: [0, 'Giá tiền không thể nhỏ hơn 0']
+    }, status: {
       type: String,
       enum: ['available', 'out_of_stock'],
       default: 'available',
