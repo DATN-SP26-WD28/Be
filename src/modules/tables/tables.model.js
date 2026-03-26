@@ -13,7 +13,7 @@ const tableSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['available', 'occupied', 'reserved', 'out_of_service'],
+    enum: ['available', 'occupied', 'out_of_service'],
     default: 'available'
   },
   qr_code: {

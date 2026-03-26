@@ -12,14 +12,13 @@ import OrderStatusHistoryRouter from "../modules/order_status_history/OrderStatu
 import invoicesRouter from "../modules/invoice/Invoice.routes.js";
 import paymentRouter from "../modules/payment/payments.routes.js";
 import staffRouter from "../modules/staff/staff.routes.js";
-import customerRouter from "../modules/customer/customer.routes.js";
 import userRouter from "../modules/user/user.routes.js";
+import guestRouter from "../modules/guest/Guest.routes.js";
 
 const router = Router();
 
 router.use("/auth", authRouter);
 router.use("/staff", staffRouter); // Quản lý nhân viên
-router.use("/customers", customerRouter); // Quản lý khách hàng
 router.use("/users", userRouter); // Quản lý người dùng chung
 router.use("/tables", tablesRouter);
 router.use("/categories", categoriesRouter);
@@ -31,5 +30,6 @@ router.use("/order-item-history", orderItemStatusHistoryRouter);
 router.use("/order-status-history", OrderStatusHistoryRouter);
 router.use("/invoice", invoicesRouter);
 router.use("/payments", paymentRouter);
+router.use("/guest", guestRouter);
 
 export default router;
