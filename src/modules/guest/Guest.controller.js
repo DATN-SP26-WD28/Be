@@ -11,7 +11,7 @@ export const guestController = {
      * 1. Đăng nhập vãng lai (Gắn với bàn cụ thể)
      * Payload: { username, table_number, token }
      */
-    login: handleAsync(async (req, res) => {
+   login: handleAsync(async (req, res) => {
         const { username, table_number, token } = req.body;
 
         // A. Kiểm tra tính hợp lệ của bàn và QR Token
@@ -20,25 +20,24 @@ export const guestController = {
             throw createError(res, 404, 'Không tìm thấy thông tin bàn ăn này');
         }
 
-        // So khớp token từ QR khách quét với token lưu trong DB của bàn đó
         if (!token || table.token !== token) {
             throw createError(res, 403, 'Mã QR không hợp lệ hoặc đã hết hạn. Vui lòng quét lại!');
         }
 
-        // B. Tạo phiên làm việc cho khách (Guest Session)
+        // B. Tạo phiên làm việc cho khách
         const newGuest = await Guest.create({
             username,
             table_id: table._id,
             role: 'guest'
         });
 
-        // C. Cập nhật trạng thái bàn sang "Đang dùng" (Occupied)
+        // C. Cập nhật trạng thái bàn
         if (table.status !== 'occupied') {
             table.status = 'occupied';
             await table.save();
         }
 
-        // D. Tạo Access Token (Payload chứa đầy đủ thông tin định danh)
+        // D. Tạo Access Token (Thời gian ngắn)
         const accessToken = jwt.sign(
             {
                 id: newGuest._id,
@@ -48,7 +47,14 @@ export const guestController = {
                 table_number: table.table_number
             },
             process.env.JWT_SECRET,
-            { expiresIn: '12h' } // Khách vãng lai chỉ có tác dụng trong ngày
+            { expiresIn: '30m' } // Đổi thành 30 phút để bảo mật hơn
+        );
+
+        // E. Tạo Refresh Token (Thời gian dài hơn - dùng để lấy Access Token mới)
+        const refreshToken = jwt.sign(
+            { id: newGuest._id },
+            process.env.JWT_REFRESH_SECRET,
+            { expiresIn: '12h' } // Khách dùng trong ngày
         );
 
         return createResponse(res, 200, `Chào mừng ${username} đến với Roosta!`, {
@@ -59,7 +65,8 @@ export const guestController = {
                 table_number: table.table_number,
                 table_id: table._id
             },
-            accessToken
+            accessToken,
+            refreshToken 
         });
     }),
 
