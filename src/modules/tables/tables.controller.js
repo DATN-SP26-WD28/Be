@@ -1,3 +1,4 @@
+import { nanoid } from 'nanoid';
 import createError from '../../shared/utils/createError.js';
 import createResponse from '../../shared/utils/createResponse.js';
 import handleAsync from '../../shared/utils/handleAsync.js';
@@ -9,14 +10,14 @@ import Table from './tables.model.js';
 // 1. Tạo bàn mới và tạo mã QR tự động
 export const createTable = handleAsync(async (req, res) => {
   const { table_number, capacity } = req.body;
-  
+
   const existingTable = await Table.findOne({ table_number });
   if (existingTable) throw createError(res, 400, 'Số bàn này đã tồn tại');
 
-  // Giả sử link QR dẫn đến Frontend: https://roosta.vn/table/T01
-  const qr_code = `${process.env.CLIENT_URL || 'http://localhost:5173'}/table/${table_number}`;
+  const token = nanoid(32); // Tạo token ngẫu nhiên
+  const qr_code = `${process.env.CLIENT_URL || 'http://localhost:5173'}/table/${table_number}?token=${token}`;
 
-  const newTable = await Table.create({ table_number, capacity, qr_code });
+  const newTable = await Table.create({ table_number, capacity, qr_code, token });
   return createResponse(res, 201, 'Tạo bàn thành công', newTable);
 });
 
@@ -31,9 +32,15 @@ export const getAllTables = handleAsync(async (req, res) => {
 // 3. Khách quét mã QR (Check-in)
 export const checkInTable = handleAsync(async (req, res) => {
   const { table_number } = req.params;
+  const { token } = req.query; // Lấy token từ query string
 
   const table = await Table.findOne({ table_number });
   if (!table) throw createError(res, 404, 'Không tìm thấy bàn');
+
+  // Validate token
+  if (!token || table.token !== token) {
+    throw createError(res, 403, 'Mã QR không hợp lệ hoặc đã hết hạn');
+  }
 
   if (table.status === 'occupied') {
     return createResponse(res, 200, 'Bàn đang được sử dụng, bạn có muốn tham gia nhóm đặt món không?', table);
@@ -54,21 +61,39 @@ export const updateTable = handleAsync(async (req, res) => {
   const table = await Table.findById(id);
   if (!table) throw createError(res, 404, 'Không tìm thấy bàn');
 
+  let shouldUpdateQR = false;
+
   if (table_number && table_number !== table.table_number) {
     const existingTable = await Table.findOne({ table_number });
     if (existingTable) throw createError(res, 400, 'Số bàn này đã tồn tại');
-    
-    // Cập nhật QR code nếu số bàn thay đổi
-    table.qr_code = `${process.env.CLIENT_URL || 'http://localhost:5173'}/table/${table_number}`;
+    table.table_number = table_number;
+    shouldUpdateQR = true;
   }
 
-  table.table_number = table_number || table.table_number;
   table.capacity = capacity || table.capacity;
   table.status = status || table.status;
   table.location = location || table.location;
 
+  if (shouldUpdateQR) {
+    table.qr_code = `${process.env.CLIENT_URL || 'http://localhost:5173'}/table/${table.table_number}?token=${table.token}`;
+  }
+
   await table.save();
   return createResponse(res, 200, 'Cập nhật bàn thành công', table);
+});
+
+// 6. Regenerate token cho bàn
+export const regenerateToken = handleAsync(async (req, res) => {
+  const { id } = req.params;
+  const table = await Table.findById(id);
+  if (!table) throw createError(res, 404, 'Không tìm thấy bàn');
+
+  const newToken = nanoid(10);
+  table.token = newToken;
+  table.qr_code = `${process.env.CLIENT_URL || 'http://localhost:5173'}/table/${table.table_number}?token=${newToken}`;
+
+  await table.save();
+  return createResponse(res, 200, 'Làm mới mã QR thành công', table);
 });
 
 // 5. Xóa bàn

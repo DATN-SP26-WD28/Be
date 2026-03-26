@@ -20,6 +20,11 @@ const tableSchema = new mongoose.Schema({
     type: String,
     default: '' // Bạn có thể lưu link hoặc mã định danh để khách quét tại bàn
   },
+  token: {
+    type: String,
+    required: true,
+    unique: true
+  },
   location: {
     type: String, // Ví dụ: 'Tầng 1', 'Ngoài trời', 'Phòng VIP'
     trim: true
