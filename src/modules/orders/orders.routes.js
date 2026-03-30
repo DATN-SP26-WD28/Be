@@ -1,13 +1,21 @@
-
 import express from 'express';
 import * as orderController from './orders.controller.js';
-
+import { protect, restrictTo } from '../../shared/middlewares/auth.middleware.js';
 const router = express.Router();
 
-router.post('/', orderController.createOrder);
-router.get('/', orderController.getAllOrders);
-router.get('/:id', orderController.getOrder);
-router.put('/:id', orderController.updateOrder);
-router.delete('/:id', orderController.deleteOrder);
+// 1. Khách vãng lai hoặc Thành viên đều có thể đặt món
+router.post('/', protect, orderController.createOrder);
+
+// 2. Chỉ Admin hoặc Staff mới có quyền xem tất cả đơn hàng
+router.get('/', protect, restrictTo('admin', 'staff'), orderController.getAllOrders);
+
+// 3. Xem chi tiết 1 đơn hàng (Cần đăng nhập)
+router.get('/:id', protect, orderController.getOrder);
+
+// 4. Cập nhật trạng thái đơn hàng (Chỉ Admin/Staff/Bếp)
+router.put('/:id', protect, restrictTo('admin', 'staff'), orderController.updateOrder);
+
+// 5. Xóa đơn hàng (Chỉ Admin)
+router.delete('/:id', protect, restrictTo('admin'), orderController.deleteOrder);
 
 export default router;

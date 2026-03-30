@@ -1,45 +1,67 @@
 import jwt from "jsonwebtoken";
 import User from "../../modules/auth/auth.model.js";
+import Guest from "../../modules/guest/Guest.model.js";
 import handleAsync from "../utils/handleAsync.js";
 import createError from "../utils/createError.js";
 
-// 1. Middleware bảo vệ: Kiểm tra đăng nhập
+// 1. Middleware bảo vệ: Kiểm tra Token và xác thực người dùng/khách
 export const protect = handleAsync(async (req, res, next) => {
   let token;
 
-  // Kiểm tra xem Token có nằm trong Header (Authorization: Bearer <token>) không
-  if (
-    req.headers.authorization &&
-    req.headers.authorization.startsWith("Bearer")
-  ) {
+  // Lấy token từ Header
+  if (req.headers.authorization && req.headers.authorization.startsWith("Bearer")) {
     token = req.headers.authorization.split(" ")[1];
   }
 
   if (!token) {
-    throw createError(401, "Bạn chưa đăng nhập! Vui lòng đăng nhập để truy cập.");
+    return next(createError(res, 401, "Bạn chưa đăng nhập! Vui lòng quét mã QR hoặc đăng nhập."));
   }
 
-  // Giải mã Token (Sử dụng JWT_SECRET trong file .env)
-  const decoded = jwt.verify(token, process.env.JWT_SECRET);
+  try {
+    // 1. Giải mã Token
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-  // Tìm User từ ID đã giải mã (Trong hàm login bạn đặt là { id: user._id })
-  const currentUser = await User.findById(decoded.id);
+    // 2. Tìm User hoặc Guest tùy theo Role trong Token
+    let currentUser;
+    if (decoded.role === 'guest') {
+      currentUser = await Guest.findById(decoded.id);
+    } else {
+      currentUser = await User.findById(decoded.id);
+    }
 
-  if (!currentUser) {
-    throw createError(401, "Người dùng sở hữu token này không còn tồn tại.");
+    if (!currentUser) {
+      return next(createError(res, 401, "Người dùng hoặc phiên làm việc này không còn tồn tại."));
+    }
+
+    // 3. GÁN DỮ LIỆU VÀO REQ.USER (Khớp với sơ đồ ERD của bạn)
+    // Lưu ý: Lấy table_id từ decoded (Token) vì Guest gắn liền với bàn khi login
+    req.user = {
+      id: currentUser._id,
+      role: decoded.role,
+      username: currentUser.username,
+      table_id: decoded.table_id || null,
+      table_number: decoded.table_number || null
+    };
+
+    next();
+  } catch (error) {
+    // Xử lý riêng lỗi hết hạn để Frontend (React) có thể bắt được và dùng Refresh Token
+    if (error.name === "TokenExpiredError") {
+      return next(createError(res, 401, "Phiên làm việc đã hết hạn (JWT expired)."));
+    }
+    if (error.name === "JsonWebTokenError") {
+      return next(createError(res, 401, "Mã xác thực không hợp lệ."));
+    }
+    next(error);
   }
-
-  // LƯU QUAN TRỌNG: Gán thông tin user vào request để các hàm sau (như getMe) có thể dùng
-  req.user = currentUser;
-  next();
 });
 
-// 2. Middleware phân quyền: Chỉ cho phép các Role cụ thể (ví dụ: Admin)
+// 2. Middleware phân quyền: Chặn theo Role (admin, staff, guest...)
 export const restrictTo = (...roles) => {
   return (req, res, next) => {
-    // req.user đã được tạo ra từ middleware protect ở trên
-    if (!roles.includes(req.user.role)) {
-      throw createError(403, "Bạn không có quyền thực hiện hành động này!");
+    // req.user đã được gán dữ liệu ở middleware protect phía trên
+    if (!req.user || !roles.includes(req.user.role)) {
+      return next(createError(res, 403, "Bạn không có quyền truy cập chức năng này!"));
     }
     next();
   };
