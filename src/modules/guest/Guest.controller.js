@@ -11,7 +11,7 @@ export const guestController = {
      * 1. Đăng nhập vãng lai (Gắn với bàn cụ thể)
      * Payload: { username, table_number, token }
      */
-   login: handleAsync(async (req, res) => {
+    login: handleAsync(async (req, res) => {
         const { username, table_number, token } = req.body;
 
         // A. Kiểm tra tính hợp lệ của bàn và QR Token
@@ -47,14 +47,14 @@ export const guestController = {
                 table_number: table.table_number
             },
             process.env.JWT_SECRET,
-            { expiresIn: '30m' } // Đổi thành 30 phút để bảo mật hơn
+            { expiresIn: '12h' } // Đổi thành 30 phút để bảo mật hơn
         );
 
         // E. Tạo Refresh Token (Thời gian dài hơn - dùng để lấy Access Token mới)
         const refreshToken = jwt.sign(
             { id: newGuest._id },
             process.env.JWT_REFRESH_SECRET,
-            { expiresIn: '12h' } // Khách dùng trong ngày
+            { expiresIn: '12h' }
         );
 
         return createResponse(res, 200, `Chào mừng ${username} đến với Roosta!`, {
@@ -66,7 +66,7 @@ export const guestController = {
                 table_id: table._id
             },
             accessToken,
-            refreshToken 
+            refreshToken
         });
     }),
 
