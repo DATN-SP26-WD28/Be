@@ -135,7 +135,7 @@ export const getOrdersByTable = handleAsync(async (req, res) => {
 
   const orderIds = orders.map((order) => order._id);
   const orderItems = await OrderItem.find({ order_id: { $in: orderIds } })
-    .populate('dish_id', 'dish_name price');
+    .populate('dish_id', 'dish_name price image_url');
 
   const groupedItems = orderItems.reduce((acc, item) => {
     const key = item.order_id?.toString();
