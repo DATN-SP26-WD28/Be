@@ -5,71 +5,89 @@ import { HOST, PORT } from "./src/shared/configs/dotenvConfig.js";
 import notFoundRequest from "./src/shared/middlewares/notFoundRequest.js";
 import cors from "cors";
 import morgan from "morgan";
-import cookieParser from "cookie-parser"
-import 'dotenv/config'
+import cookieParser from "cookie-parser";
+import 'dotenv/config';
 
 const app = express();
-app.use(cookieParser())
+
+// 1. Middlewares cơ bản
+app.use(cookieParser());
 app.use(express.json());
+app.use(morgan("dev"));
+
+// 2. Cấu hình CORS
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow all localhost origins for development
+      // Cho phép tất cả các nguồn localhost để dev thuận tiện
       if (!origin || origin.includes('localhost') || origin.includes('127.0.0.1')) {
         callback(null, true);
       } else {
-        callback(new Error('Not allowed by CORS'));
+        callback(new Error('CORS: Nguồn truy cập không được phép!'));
       }
     },
     credentials: true,
   })
 );
-app.use(morgan("dev"));
 
+// 3. Kết nối Database
 connectDB();
 
+// 4. Định nghĩa Routes
 app.use("/", router);
 
-
-// * handle Notfound Request
+// 5. Xử lý Route không tồn tại (404 Not Found)
 app.use(notFoundRequest);
 
-// PHẢI CÓ ĐỦ 4 THAM SỐ: err, req, res, next
+// 6. MIDDLEWARE XỬ LÝ LỖI TẬP TRUNG (QUAN TRỌNG)
 app.use((err, req, res, next) => {
-  console.error(">>> LOG LỖI:", err);
+  // Lấy mã lỗi từ err.statusCode (từ createError) hoặc err.status hoặc mặc định 500
+  const statusCode = err.statusCode || err.status || 500;
+  let message = err.message || "Lỗi hệ thống (Internal Server Error)";
 
-  // Handle Mongoose Validation Errors
+  // Log lỗi chi tiết ra terminal để bạn dễ debug
+  console.error(`>>> [ERROR ${statusCode}]:`, message);
+
+  // Xử lý riêng lỗi Validation của Mongoose (Dữ liệu gửi lên sai Schema)
   if (err.name === 'ValidationError') {
-    const messages = Object.values(err.errors)
+    const validationMessages = Object.values(err.errors)
       .map(error => error.message)
       .join(', ');
 
     return res.status(400).json({
       status: 'error',
-      message: messages || 'Dữ liệu không hợp lệ',
+      message: validationMessages || 'Dữ liệu không hợp lệ',
       errors: err.errors
     });
   }
 
-  // Handle Mongoose Duplicate Key Errors
+  // Xử lý lỗi trùng lặp dữ liệu (Unique Key - lỗi 11000)
   if (err.code === 11000) {
     const field = Object.keys(err.keyPattern)[0];
     return res.status(409).json({
       status: 'error',
-      message: `${field} đã tồn tại`
+      message: `${field} đã tồn tại trong hệ thống`
     });
   }
 
-  // Default error handler
-  const statusCode = err.status || 500;
+  // Xử lý lỗi JWT hết hạn (Khớp với vấn đề Token lúc đầu của bạn)
+  if (err.name === "TokenExpiredError") {
+    return res.status(401).json({
+      status: 'error',
+      message: "Phiên làm việc đã hết hạn. Vui lòng đăng nhập lại!"
+    });
+  }
 
+  // Phản hồi lỗi cuối cùng về Frontend (Đảm bảo statusCode luôn là số nguyên)
   res.status(statusCode).json({
-    status: statusCode >= 400 && statusCode < 500 ? 'error' : 'error',
-    message: err.message || "Lỗi cơ sở dữ liệu",
-    err: process.env.NODE_ENV === 'development' ? err.message : undefined
+    status: 'error',
+    message: message,
+    // Chỉ hiện stack trace khi đang ở môi trường phát triển (development)
+    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
   });
 });
 
+// 7. Khởi động Server
 app.listen(PORT, () => {
-  console.log(`Server is running on ${HOST}:${PORT}`);
+  console.log(`🚀 Roosta Server is running on: ${HOST}:${PORT}`);
 });
