@@ -1,5 +1,7 @@
 import { Order } from './orders.model.js';
 import { OrderItem } from '../order_items/order_items.model.js'
+import Dish from '../dishes/dishes.model.js';
+import Table from '../tables/tables.model.js';
 import handleAsync from '../../shared/utils/handleAsync.js';
 import createError from '../../shared/utils/createError.js';
 import createResponse from '../../shared/utils/createResponse.js';
@@ -43,6 +45,71 @@ export const createOrder = handleAsync(async (req, res) => {
 
   return createResponse(res, 201, 'Đặt món thành công!', newOrder);
 });
+
+// 1b. Tạo đơn hàng mới (Dành cho Admin/Nhân viên)
+export const createOrderByStaff = handleAsync(async (req, res) => {
+  const { table_id, items, note } = req.body;
+  const { id: staffId } = req.user;
+
+  const table = await Table.findById(table_id);
+  if (!table) throw createError(res, 404, 'Không tìm thấy bàn');
+  if (table.status === 'out_of_service') {
+    throw createError(res, 400, 'Bàn đang ngưng phục vụ, không thể tạo đơn');
+  }
+
+  const uniqueDishIds = [...new Set(items.map((item) => item.dish_id))];
+  const dishes = await Dish.find({ _id: { $in: uniqueDishIds } }).select('_id price status');
+  if (dishes.length !== uniqueDishIds.length) {
+    throw createError(res, 400, 'Một số món ăn không tồn tại');
+  }
+
+  const dishMap = new Map(dishes.map((dish) => [dish._id.toString(), dish]));
+
+  const normalizedItems = items.map((item) => {
+    const dish = dishMap.get(item.dish_id);
+    if (!dish) throw createError(res, 400, 'Món ăn không hợp lệ');
+    if (dish.status === 'out_of_stock') {
+      throw createError(res, 400, 'Có món ăn đang hết hàng, vui lòng kiểm tra lại');
+    }
+
+    const quantity = Number(item.quantity);
+    const price = Number(dish.price);
+    const itemTotal = price * quantity;
+
+    return {
+      dish_id: item.dish_id,
+      quantity,
+      price,
+      itemTotal,
+    };
+  });
+
+  const calculatedTotal = normalizedItems.reduce((sum, item) => sum + item.itemTotal, 0);
+
+  const newOrder = await Order.create({
+    table_id,
+    guest_id: null,
+    user_id: null,
+    created_by_staff_id: staffId,
+    total_amount: calculatedTotal,
+    status: 'pending',
+    note: note || '',
+  });
+
+  const orderItemsData = normalizedItems.map((item) => ({
+    order_id: newOrder._id,
+    dish_id: item.dish_id,
+    quantity: item.quantity,
+    price: item.price,
+    total_amount: item.itemTotal,
+    subTotal: item.itemTotal,
+    status: 'pending',
+  }));
+
+  await OrderItem.insertMany(orderItemsData);
+
+  return createResponse(res, 201, 'Tạo đơn hàng thành công!', newOrder);
+});
 // 2. Lấy danh sách đơn hàng (Admin/Staff quản lý)
 export const getAllOrders = handleAsync(async (req, res) => {
   const orders = await Order.find()
@@ -51,6 +118,40 @@ export const getAllOrders = handleAsync(async (req, res) => {
     .sort({ createdAt: -1 });
 
   return createResponse(res, 200, 'Lấy danh sách đơn hàng thành công', orders);
+});
+
+// 2b. Lấy danh sách đơn hàng theo bàn
+export const getOrdersByTable = handleAsync(async (req, res) => {
+  const { tableId } = req.params;
+
+  const orders = await Order.find({ table_id: tableId })
+    .populate('table_id', 'table_number location')
+    .populate('guest_id', 'username')
+    .sort({ createdAt: -1 });
+
+  if (!orders.length) {
+    return createResponse(res, 200, 'Lấy đơn hàng theo bàn thành công', []);
+  }
+
+  const orderIds = orders.map((order) => order._id);
+  const orderItems = await OrderItem.find({ order_id: { $in: orderIds } })
+    .populate('dish_id', 'dish_name price');
+
+  const groupedItems = orderItems.reduce((acc, item) => {
+    const key = item.order_id?.toString();
+    if (!key) return acc;
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(item);
+    return acc;
+  }, {});
+
+  const ordersWithItems = orders.map((order) => {
+    const plainOrder = order.toObject();
+    plainOrder.items = groupedItems[order._id.toString()] || [];
+    return plainOrder;
+  });
+
+  return createResponse(res, 200, 'Lấy đơn hàng theo bàn thành công', ordersWithItems);
 });
 
 // 3. Lấy chi tiết một đơn hàng kèm các món ăn

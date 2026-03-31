@@ -15,6 +15,7 @@ const orderSchema = new mongoose.Schema({
   // Hỗ trợ cả khách thành viên và khách vãng lai
   user_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   guest_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Guest', default: null },
+  created_by_staff_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Staff', default: null },
   
   total_amount: { type: Number, required: true },
   status: { 
