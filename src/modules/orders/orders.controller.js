@@ -122,17 +122,27 @@ export const getAllOrders = handleAsync(async (req, res) => {
 
 // 2b. Lấy danh sách đơn hàng theo bàn
 export const getOrdersByTable = handleAsync(async (req, res) => {
-  const { tableId } = req.params;
+  // 1. Lấy số bàn từ params (Ví dụ: /table/1)
+  const { tableNumber } = req.params;
 
-  const orders = await Order.find({ table_id: tableId })
+  // 2. Bước quan trọng: Tìm ID thực sự của bàn dựa trên số bàn
+  const table = await Table.findOne({ table_number: Number(tableNumber) });
+
+  if (!table) {
+    return createResponse(res, 404, 'Không tìm thấy thông tin bàn này');
+  }
+
+  // 3. Tìm tất cả Đơn hàng thuộc về ID của bàn đó
+  const orders = await Order.find({ table_id: table._id })
     .populate('table_id', 'table_number location')
-    .populate('guest_id', 'username')
+    .populate('guest_id', 'username text_color') // Lấy tên khách cho sinh động
     .sort({ createdAt: -1 });
 
   if (!orders.length) {
-    return createResponse(res, 200, 'Lấy đơn hàng theo bàn thành công', []);
+    return createResponse(res, 200, 'Bàn hiện tại chưa có đơn hàng nào', []);
   }
 
+  // 4. Lấy chi tiết món ăn cho từng đơn hàng (Giữ nguyên logic cũ của bạn)
   const orderIds = orders.map((order) => order._id);
   const orderItems = await OrderItem.find({ order_id: { $in: orderIds } })
     .populate('dish_id', 'dish_name price image_url');
@@ -148,10 +158,12 @@ export const getOrdersByTable = handleAsync(async (req, res) => {
   const ordersWithItems = orders.map((order) => {
     const plainOrder = order.toObject();
     plainOrder.items = groupedItems[order._id.toString()] || [];
+    // Tính tổng tiền trực tiếp để Frontend không phải tính lại
+    plainOrder.total_amount = plainOrder.items.reduce((sum, it) => sum + (it.price * it.quantity), 0);
     return plainOrder;
   });
 
-  return createResponse(res, 200, 'Lấy đơn hàng theo bàn thành công', ordersWithItems);
+  return createResponse(res, 200, 'Lấy danh sách món đã gọi thành công', ordersWithItems);
 });
 
 // 3. Lấy chi tiết một đơn hàng kèm các món ăn

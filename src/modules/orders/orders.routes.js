@@ -10,11 +10,11 @@ router.post('/', protect, orderController.createOrder);
 
 // 1b. Admin/Nhân viên tạo đơn cho bàn bất kỳ
 router.post(
-	'/staff-create',
-	protect,
-	restrictTo('admin', 'waiter', 'cashier', 'chef'),
-	validBodyRequest(createOrderByStaffSchema),
-	orderController.createOrderByStaff,
+    '/staff-create',
+    protect,
+    restrictTo('admin', 'waiter', 'cashier', 'chef'),
+    validBodyRequest(createOrderByStaffSchema),
+    orderController.createOrderByStaff,
 );
 
 // 2. Chỉ Admin hoặc Staff mới có quyền xem tất cả đơn hàng
@@ -22,10 +22,10 @@ router.get('/', protect, restrictTo('admin', 'waiter', 'cashier', 'chef'), order
 
 // 2b. Xem danh sách đơn hàng theo bàn
 router.get(
-	'/table/:tableId',
-	protect,
-	restrictTo('admin', 'waiter', 'cashier', 'chef'),
-	orderController.getOrdersByTable,
+    '/table/:tableNumber',
+    // protect,
+    // restrictTo('admin', 'waiter', 'cashier', 'chef'),
+    orderController.getOrdersByTable,
 );
 
 // 3. Xem chi tiết 1 đơn hàng (Cần đăng nhập)
