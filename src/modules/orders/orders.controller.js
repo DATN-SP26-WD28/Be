@@ -131,7 +131,7 @@ export const getAllOrders = handleAsync(async (req, res) => {
   })
     .populate('table_id', 'table_number location')
     .populate('guest_id', 'username')
-    .sort({ createdAt: -1 }); // Đơn mới nhất hiện lên trên cùng
+    .sort({ createdAt: 1 }); // Đơn mới nhất hiện lên trên cùng
 
   // Nếu không có đơn nào đang hoạt động
   if (!orders || orders.length === 0) {
