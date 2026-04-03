@@ -15,4 +15,11 @@ export const createFeedback = async (req, res) => {
   }
 
 };
-
+export const getAllFeedbacks = async (req, res) => {
+  try {
+    const feedbacks = await Feedback.find().populate("user_id dish_id", "username dish_name");
+    res.status(200).json(feedbacks);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
