@@ -14,6 +14,8 @@ import staffRouter from "../modules/staff/staff.routes.js";
 import userRouter from "../modules/user/user.routes.js";
 import guestRouter from "../modules/guest/Guest.routes.js";
 import paymenRouter from "../modules/payment/payments.routes.js";
+import feedbackRouter from "../modules/feedback/feedbacks.routes.js";
+import feedbackResponseRouter from "../modules/feedback_responses/feedback_responses.routes.js"; 
 
 const router = Router();
 
@@ -31,5 +33,7 @@ router.use("/order-status-history", OrderStatusHistoryRouter);
 router.use("/invoice", invoicesRouter);
 router.use("/payments", paymenRouter);
 router.use("/guest", guestRouter);
+router.use("/feedbacks", feedbackRouter);
+router.use("/feedback-responses", feedbackResponseRouter);
 
 export default router;
