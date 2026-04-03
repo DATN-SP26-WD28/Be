@@ -124,26 +124,28 @@ export const createOrderByStaff = handleAsync(async (req, res) => {
 });
 
 export const getAllOrders = handleAsync(async (req, res) => {
-  // 1. Tìm tất cả các đơn hàng trong hệ thống
-  // Populate table_id và guest_id để có tên bàn và tên khách hàng
-  const orders = await Order.find()
+  // 1. CHỈ TÌM các đơn hàng đang hoạt động (Chưa thanh toán, chưa hủy)
+  // Điều này giúp màn hình quản lý không bị tràn ngập đơn cũ của khách trước
+  const orders = await Order.find({
+    status: { $nin: ['completed', 'cancelled'] }
+  })
     .populate('table_id', 'table_number location')
     .populate('guest_id', 'username')
-    .sort({ createdAt: -1 }); // Mới nhất lên đầu
+    .sort({ createdAt: -1 }); // Đơn mới nhất hiện lên trên cùng
 
+  // Nếu không có đơn nào đang hoạt động
   if (!orders || orders.length === 0) {
-    return createResponse(res, 200, 'Hiện chưa có đơn hàng nào', []);
+    return createResponse(res, 200, 'Hiện không có đơn hàng nào cần xử lý', []);
   }
 
-  // 2. Lấy danh sách ID của tất cả đơn hàng vừa tìm được
+  // 2. Lấy danh sách ID của các đơn hàng đang hoạt động
   const orderIds = orders.map((order) => order._id);
 
-  // 3. Tìm tất cả các Món ăn (OrderItem) thuộc về danh sách OrderId này
-  // Populate dish_id để lấy tên món, giá và ảnh
+  // 3. Tìm các món ăn (OrderItem) thuộc về danh sách OrderId này
   const allOrderItems = await OrderItem.find({ order_id: { $in: orderIds } })
     .populate('dish_id', 'dish_name price image_url');
 
-  // 4. Nhóm các món ăn vào đúng đơn hàng của chúng
+  // 4. Nhóm các món ăn vào đúng đơn hàng
   const groupedItems = allOrderItems.reduce((acc, item) => {
     const key = item.order_id?.toString();
     if (!key) return acc;
@@ -152,16 +154,22 @@ export const getAllOrders = handleAsync(async (req, res) => {
     return acc;
   }, {});
 
-  // 5. Gắn mảng items vào từng đối tượng Order tương ứng
+  // 5. Gắn mảng items vào từng đối tượng Order
   const ordersWithItems = orders.map((order) => {
     const plainOrder = order.toObject();
-    // Lấy danh sách món từ groupedItems, nếu không có thì trả về mảng rỗng
     plainOrder.items = groupedItems[order._id.toString()] || [];
+
+    // Tiện thể tính luôn tổng tiền hiển thị cho Admin dễ nhìn
+    plainOrder.total_amount = plainOrder.items.reduce(
+      (sum, it) => sum + (Number(it.price) * Number(it.quantity)),
+      0
+    );
+
     return plainOrder;
   });
 
   // 6. Trả về cho Frontend
-  return createResponse(res, 200, 'Lấy toàn bộ danh sách đơn hàng thành công', ordersWithItems);
+  return createResponse(res, 200, 'Lấy danh sách đơn hàng đang hoạt động thành công', ordersWithItems);
 });
 
 // 2b. Lấy danh sách đơn hàng theo bàn
@@ -172,17 +180,12 @@ export const getOrdersByTable = handleAsync(async (req, res) => {
   let query = {};
 
   // 2. NHẬN DIỆN THÔNG MINH:
-  // Kiểm tra nếu tableParam là một MongoDB ObjectId hợp lệ (chuỗi 24 ký tự)
   const isObjectId = /^[0-9a-fA-F]{24}$/.test(tableParam);
 
   if (isObjectId) {
-    // Nếu là ID, dùng trực tiếp để tìm trong bảng Order
     query = { table_id: tableParam };
   } else {
-    // Nếu không phải ID, mặc định là Số bàn (dành cho Khách hàng quét mã QR)
     const tableNum = Number(tableParam);
-
-    // Phòng hờ trường hợp param gửi lên là chữ rác không phải số
     if (isNaN(tableNum)) {
       return createResponse(res, 400, 'Tham số bàn không hợp lệ');
     }
@@ -194,23 +197,27 @@ export const getOrdersByTable = handleAsync(async (req, res) => {
     query = { table_id: table._id };
   }
 
-  // 3. Tìm tất cả Đơn hàng dựa trên query đã xác định (theo ID hoặc theo Số bàn)
-  const orders = await Order.find(query)
+  // 3. TÌM KIẾM CÓ CHỌN LỌC (QUAN TRỌNG NHẤT)
+  // Chỉ lấy những đơn hàng đang hoạt động (chưa thanh toán, chưa hủy)
+  const orders = await Order.find({
+    ...query,
+    status: { $nin: ['completed', 'cancelled'] }
+  })
     .populate('table_id', 'table_number location')
     .populate('guest_id', 'username text_color')
     .sort({ createdAt: -1 });
 
-  // Nếu không có đơn hàng, trả về mảng rỗng (200 OK) thay vì lỗi
+  // Nếu không có đơn hàng đang hoạt động, trả về mảng rỗng để FE hiện "Bạn chưa gọi món"
   if (!orders || orders.length === 0) {
-    return createResponse(res, 200, 'Bàn hiện tại chưa có đơn hàng nào', []);
+    return createResponse(res, 200, 'Bàn hiện tại trống, sẵn sàng gọi món', []);
   }
 
-  // 4. Lấy chi tiết món ăn (OrderItem) cho toàn bộ danh sách Order
+  // 4. Lấy chi tiết món ăn (OrderItem) cho các đơn hàng đang hoạt động
   const orderIds = orders.map((order) => order._id);
   const orderItems = await OrderItem.find({ order_id: { $in: orderIds } })
     .populate('dish_id', 'dish_name price image_url');
 
-  // 5. Gom nhóm OrderItem vào đúng Order (Tối ưu hiệu năng)
+  // 5. Gom nhóm OrderItem vào đúng Order
   const groupedItems = orderItems.reduce((acc, item) => {
     const key = item.order_id?.toString();
     if (!key) return acc;
@@ -219,12 +226,12 @@ export const getOrdersByTable = handleAsync(async (req, res) => {
     return acc;
   }, {});
 
-  // 6. Trộn dữ liệu và tính tổng tiền
+  // 6. Trộn dữ liệu và tính tổng tiền hiển thị
   const ordersWithItems = orders.map((order) => {
     const plainOrder = order.toObject();
     plainOrder.items = groupedItems[order._id.toString()] || [];
 
-    // Tính tổng tiền trực tiếp từ items
+    // Tính tổng tiền dựa trên giá và số lượng thực tế trong OrderItem
     plainOrder.total_amount = plainOrder.items.reduce(
       (sum, it) => sum + (Number(it.price) * Number(it.quantity)),
       0

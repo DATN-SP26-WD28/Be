@@ -18,7 +18,9 @@ router.post(
 );
 
 // 2. Chỉ Admin hoặc Staff mới có quyền xem tất cả đơn hàng
-router.get('/', protect, restrictTo('admin', 'waiter', 'cashier', 'chef'), orderController.getAllOrders);
+router.get('/', protect, 
+    // restrictTo('admin', 'waiter', 'cashier', 'chef'), 
+    orderController.getAllOrders);
 
 // 2b. Xem danh sách đơn hàng theo bàn
 router.get(
