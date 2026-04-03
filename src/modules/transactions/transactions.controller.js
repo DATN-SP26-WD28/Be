@@ -19,3 +19,13 @@ export const getTransactionHistory = async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 };
+
+export const getTransactionByInvoice = async (req, res) => {
+  try {
+    const transaction = await Transaction.findOne({ invoice_id: req.params.invoiceId });
+    if (!transaction) return res.status(404).json({ success: false, message: "Giao dịch không tồn tại" });
+    res.status(200).json({ success: true, data: transaction });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
