@@ -31,3 +31,11 @@ export const updateFeedbackStatus = async (req, res) => {
     res.status(400).json({ message: error.message });
   }
 };
+export const deleteFeedback = async (req, res) => {
+  try {
+    await Feedback.findByIdAndDelete(req.params.id);
+    res.status(200).json({ message: "Xóa đánh giá thành công" });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
