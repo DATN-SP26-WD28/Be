@@ -23,3 +23,11 @@ export const getAllFeedbacks = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+export const updateFeedbackStatus = async (req, res) => {
+  try {
+    const updated = await Feedback.findByIdAndUpdate(req.params.id, { status: req.body.status }, { new: true });
+    res.status(200).json(updated);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+};
