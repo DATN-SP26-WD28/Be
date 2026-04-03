@@ -20,3 +20,16 @@ export const getResponseByFeedback = async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 };
+
+export const updateResponse = async (req, res) => {
+  try {
+    const updated = await FeedbackResponse.findByIdAndUpdate(
+      req.params.id, 
+      { content: req.body.content }, 
+      { new: true, runValidators: true }
+    );
+    res.status(200).json({ success: true, data: updated });
+  } catch (error) {
+    res.status(400).json({ success: false, message: error.message });
+  }
+};

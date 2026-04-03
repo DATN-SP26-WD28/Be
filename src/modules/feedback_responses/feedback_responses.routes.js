@@ -5,3 +5,4 @@ const router = express.Router();
 
 router.post("/", responseController.replyFeedback);
 router.get("/feedback/:feedbackId", responseController.getResponseByFeedback);
+router.put("/:id", responseController.updateResponse);
