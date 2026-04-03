@@ -33,3 +33,12 @@ export const updateResponse = async (req, res) => {
     res.status(400).json({ success: false, message: error.message });
   }
 };
+
+export const deleteResponse = async (req, res) => {
+  try {
+    await FeedbackResponse.findByIdAndDelete(req.params.id);
+    res.status(200).json({ success: true, message: "Xóa phản hồi thành công" });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
