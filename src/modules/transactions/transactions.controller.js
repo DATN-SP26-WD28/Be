@@ -29,3 +29,16 @@ export const getTransactionByInvoice = async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 };
+
+export const updateTransactionStatus = async (req, res) => {
+  try {
+    const updated = await Transaction.findByIdAndUpdate(
+      req.params.id, 
+      { status: req.body.status }, 
+      { new: true, runValidators: true }
+    );
+    res.status(200).json({ success: true, data: updated });
+  } catch (error) {
+    res.status(400).json({ success: false, message: error.message });
+  }
+};
