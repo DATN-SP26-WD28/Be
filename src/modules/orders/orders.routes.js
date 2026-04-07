@@ -39,4 +39,7 @@ router.put('/:id', protect, restrictTo('admin', 'waiter', 'cashier', 'chef'), or
 // 5. Xóa đơn hàng (Chỉ Admin)
 router.delete('/:id', protect, restrictTo('admin'), orderController.deleteOrder);
 
+//
+router.post('/switch-table', orderController.switchTable);
+
 export default router;

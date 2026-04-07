@@ -11,7 +11,9 @@ export const createDish = handleAsync(async (req, res) => {
 
 // 2. Lấy danh sách món ăn
 export const getDishes = handleAsync(async (req, res) => {
-  const dishes = await Dish.find().populate("category_id");
+  const { category_id } = req.query;
+  const filter = category_id ? { category_id } : {};
+  const dishes = await Dish.find(filter).populate("category_id");
   createResponse(res, 200, "Lấy danh sách món ăn thành công!", dishes);
 });
 

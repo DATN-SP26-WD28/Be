@@ -21,8 +21,8 @@ import transactionRoutes from "../modules/transactions/transactions.routes.js";
 const router = Router();
 
 router.use("/auth", authRouter);
-router.use("/staff", staffRouter); // Quản lý nhân viên
-router.use("/users", userRouter); // Quản lý người dùng chung
+router.use("/staff", staffRouter);
+router.use("/users", userRouter);
 router.use("/tables", tablesRouter);
 router.use("/categories", categoriesRouter);
 router.use("/dishes", dishesRouter);
@@ -31,7 +31,7 @@ router.use("/orders", ordersRouter);
 router.use("/order-items", orderItemsRouter);
 router.use("/order-item-history", orderItemStatusHistoryRouter);
 router.use("/order-status-history", OrderStatusHistoryRouter);
-router.use("/invoice", invoicesRouter);
+router.use("/invoices", invoicesRouter);
 router.use("/payments", paymenRouter);
 router.use("/guest", guestRouter);
 router.use("/feedbacks", feedbackRouter);
