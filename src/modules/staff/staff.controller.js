@@ -20,7 +20,11 @@ export const getStaffById = handleAsync(async (req, res) => {
 
 // 3. Tạo nhân viên mới
 export const createStaff = handleAsync(async (req, res) => {
-    const { username, email, phone, role, password, department, salary } = req.body;
+    let { username, email, phone, role, password, department, salary } = req.body;
+
+    username = username?.trim();
+    email = email?.trim().toLowerCase();
+    phone = phone?.trim();
 
     // Kiểm tra các trường bắt buộc
     if (!username || !email || !phone || !role) {
@@ -28,8 +32,8 @@ export const createStaff = handleAsync(async (req, res) => {
     }
 
     // Kiểm tra email đã tồn tại
-    const existingStaff = await Staff.findOne({ email });
-    if (existingStaff) {
+    const existingEmail = await Staff.findOne({ email });
+    if (existingEmail) {
         return createResponse(res, 409, "Email đã được sử dụng bởi nhân viên khác");
     }
 
@@ -37,6 +41,12 @@ export const createStaff = handleAsync(async (req, res) => {
     const existingUsername = await Staff.findOne({ username });
     if (existingUsername) {
         return createResponse(res, 409, "Tên nhân viên đã tồn tại");
+    }
+
+    // Kiểm tra phone đã tồn tại
+    const existingPhone = await Staff.findOne({ phone });
+    if (existingPhone) {
+        return createResponse(res, 409, "Số điện thoại đã được sử dụng bởi nhân viên khác");
     }
 
     // Hash password
@@ -59,7 +69,11 @@ export const createStaff = handleAsync(async (req, res) => {
 // 4. Cập nhật thông tin nhân viên
 export const updateStaff = handleAsync(async (req, res) => {
     const { id } = req.params;
-    const { username, email, phone, role, password, department, salary } = req.body;
+    let { username, email, phone, role, password, department, salary } = req.body;
+
+    username = username?.trim();
+    email = email?.trim().toLowerCase();
+    phone = phone?.trim();
 
     const staff = await Staff.findById(id);
     if (!staff) {
@@ -69,7 +83,7 @@ export const updateStaff = handleAsync(async (req, res) => {
     // Kiểm tra email đã tồn tại (nếu email được cập nhật)
     if (email && email !== staff.email) {
         const existingEmail = await Staff.findOne({ email });
-        if (existingEmail) {
+        if (existingEmail && existingEmail._id.toString() !== staff._id.toString()) {
             return createResponse(res, 409, "Email đã được sử dụng bởi nhân viên khác");
         }
     }
@@ -77,8 +91,16 @@ export const updateStaff = handleAsync(async (req, res) => {
     // Kiểm tra username đã tồn tại (nếu username được cập nhật)
     if (username && username !== staff.username) {
         const existingUsername = await Staff.findOne({ username });
-        if (existingUsername) {
+        if (existingUsername && existingUsername._id.toString() !== staff._id.toString()) {
             return createResponse(res, 409, "Tên nhân viên đã tồn tại");
+        }
+    }
+
+    // Kiểm tra phone đã tồn tại (nếu phone được cập nhật)
+    if (phone && phone !== staff.phone) {
+        const existingPhone = await Staff.findOne({ phone });
+        if (existingPhone && existingPhone._id.toString() !== staff._id.toString()) {
+            return createResponse(res, 409, "Số điện thoại đã được sử dụng bởi nhân viên khác");
         }
     }
 
