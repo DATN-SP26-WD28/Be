@@ -1,59 +1,117 @@
-import createError from "../../shared/utils/createError.js";
 import createResponse from "../../shared/utils/createResponse.js";
 import handleAsync from "../../shared/utils/handleAsync.js";
-import { Order } from "../orders/orders.model.js";
+import { OrderItem } from "../order_items/order_items.model.js";
 import Invoice from "./Invoice.model.js";
 
 
-// 1. Tạo hóa đơn mới (Khi khách nhấn thanh toán)
-export const createInvoice = handleAsync(async (req, res) => {
-    const { order_id, table_id, user_id, payment_method } = req.body;
+// 1. Lấy toàn bộ danh sách hóa đơn (Có phân trang & sắp xếp)
+// Backend: file invoice.controller.js
 
-    // Kiểm tra đơn hàng có tồn tại không
-    const order = await Order.findById(order_id);
-    if (!order) return createError(res, 404, "Không tìm thấy đơn hàng để xuất hóa đơn");
+export const getAllInvoices = handleAsync(async (req, res) => {
+  // 1. Lấy tất cả hóa đơn và CHỈ populate order_ids ở mức cơ bản
+  const invoices = await Invoice.find()
+    .populate('table_id')
+    .populate('order_ids') // Chỉ lấy ra các Order, chưa có Items
+    .sort({ created_at: -1 })
+    .lean(); // QUAN TRỌNG: Dùng .lean() để biến Mongoose Document thành Object Javascript thường, giúp ta tự do thêm thuộc tính 'items'
 
-    // Tạo mã hóa đơn ngẫu nhiên hoặc theo quy tắc (INV + Timestamp)
-    const invoice_number = `INV-${Date.now()}`;
+  if (!invoices || invoices.length === 0) {
+    return createResponse(res, 200, "Lấy danh sách thành công", []);
+  }
 
-    const invoice = await Invoice.create({
-        invoice_number,
-        table_id,
-        user_id,
-        order_id,
-        total_amount: order.total_amount, // Lấy tổng tiền từ đơn hàng
-        payment_method
-    });
+  // 2. Gom TẤT CẢ ID đơn hàng (order_ids) từ các hóa đơn vào 1 mảng duy nhất
+  const allOrderIds = [];
+  invoices.forEach(inv => {
+    if (inv.order_ids && inv.order_ids.length > 0) {
+      inv.order_ids.forEach(order => {
+        allOrderIds.push(order._id);
+      });
+    }
+  });
 
-    return createResponse(res, 201, "Tạo hóa đơn thành công", invoice);
+  // 3. Chọc vào bảng OrderItem: Lấy tất cả món ăn thuộc các đơn hàng trên
+  const allOrderItems = await OrderItem.find({ order_id: { $in: allOrderIds } })
+    .populate('dish_id', 'dish_name price image_url'); // Lấy luôn tên món
+
+  // 4. Lắp ráp: Nhét các món ăn vào đúng đơn hàng của nó
+  invoices.forEach(inv => {
+    if (inv.order_ids) {
+      inv.order_ids.forEach(order => {
+        // Lọc ra những món ăn có order_id trùng với _id của đơn hàng hiện tại
+        order.items = allOrderItems.filter(
+          item => item.order_id.toString() === order._id.toString()
+        );
+      });
+    }
+  });
+
+  // Trả về Frontend
+  return createResponse(res, 200, "Lấy danh sách hóa đơn thành công", invoices);
 });
 
-// 2. Cập nhật trạng thái đã thanh toán
-export const markAsPaid = handleAsync(async (req, res) => {
-    const { id } = req.params;
-
-    const invoice = await Invoice.findByIdAndUpdate(
-        id,
-        { status: 'paid' },
-        { new: true }
-    );
-
-    if (!invoice) return createError(res, 404, "Không tìm thấy hóa đơn");
-
-    return createResponse(res, 200, "Hóa đơn đã được thanh toán", invoice);
-});
-
-// 3. Lấy chi tiết hóa đơn (Kèm thông tin món ăn từ Order)
-export const getInvoiceDetail = handleAsync(async (req, res) => {
+// 2. Lấy chi tiết 1 hóa đơn
+export const getInvoiceById = handleAsync(async (req, res) => {
     const invoice = await Invoice.findById(req.params.id)
-        .populate('table_id', 'table_name')
-        .populate('user_id', 'username email')
+        .populate('table_id')
         .populate({
             path: 'order_id',
-            populate: { path: 'order_items.dish_id', select: 'dish_name price' }
+            populate: { path: 'items.dish_id' } // Lấy chi tiết món ăn trong hóa đơn
         });
 
-    if (!invoice) return createError(res, 404, "Không tìm thấy hóa đơn");
+    if (!invoice) return createResponse(res, 404, 'Không tìm thấy hóa đơn');
 
-    return createResponse(res, 200, "Lấy chi tiết hóa đơn thành công", invoice);
+    return createResponse(res, 200, 'Thành công', invoice);
+});
+
+// 3. HÀM QUAN TRỌNG: Lấy thống kê tổng hợp cho Dashboard
+export const getInvoiceStats = handleAsync(async (req, res) => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Tính tổng doanh thu và số đơn hàng
+    const stats = await Invoice.aggregate([
+        {
+            $group: {
+                _id: null,
+                totalRevenue: { $sum: "$total_amount" },
+                totalInvoices: { $sum: 1 },
+                avgInvoiceValue: { $avg: "$total_amount" }
+            }
+        }
+    ]);
+
+    // Doanh thu hôm nay
+    const revenueToday = await Invoice.aggregate([
+        { $match: { createdAt: { $gte: today } } },
+        { $group: { _id: null, amount: { $sum: "$total_amount" } } }
+    ]);
+
+    // Thống kê 6 tháng gần nhất (Dùng cho Sparkline/Chart)
+    const sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 5);
+
+    const monthlyRevenue = await Invoice.aggregate([
+        { $match: { createdAt: { $gte: sixMonthsAgo } } },
+        {
+            $group: {
+                _id: { $month: "$createdAt" },
+                revenue: { $sum: "$total_amount" }
+            }
+        },
+        { $sort: { "_id": 1 } }
+    ]);
+
+    return createResponse(res, 200, 'Lấy thống kê thành công', {
+        overall: stats[0] || { totalRevenue: 0, totalInvoices: 0 },
+        revenueToday: revenueToday[0]?.amount || 0,
+        monthlyChart: monthlyRevenue
+    });
+});
+
+// 4. Xóa hóa đơn
+export const deleteInvoice = handleAsync(async (req, res) => {
+    const invoice = await Invoice.findByIdAndDelete(req.params.id);
+    if (!invoice) return createResponse(res, 404, 'Không tìm thấy hóa đơn để xóa');
+
+    return createResponse(res, 200, 'Đã xóa hóa đơn thành công');
 });

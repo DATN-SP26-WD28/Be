@@ -1,10 +1,11 @@
 import express from 'express';
-import { createInvoice, getInvoiceDetail, markAsPaid } from './Invoice.controller.js';
+import { deleteInvoice, getAllInvoices, getInvoiceById, getInvoiceStats } from './Invoice.controller.js';
 
 const invoicesRouter = express.Router();
 
-invoicesRouter.post('/create', createInvoice);
-invoicesRouter.patch('/pay/:id', markAsPaid);
-invoicesRouter.get('/:id', getInvoiceDetail);
+invoicesRouter.get('/', getAllInvoices);
+invoicesRouter.get('/stats/summary', getInvoiceStats);
+invoicesRouter.get('/:id', getInvoiceById);
+invoicesRouter.delete('/:id', deleteInvoice);
 
 export default invoicesRouter;
