@@ -1,26 +1,52 @@
 import createResponse from "../../shared/utils/createResponse.js";
 import handleAsync from "../../shared/utils/handleAsync.js";
+import { OrderItem } from "../order_items/order_items.model.js";
 import Invoice from "./Invoice.model.js";
 
 
 // 1. Lấy toàn bộ danh sách hóa đơn (Có phân trang & sắp xếp)
+// Backend: file invoice.controller.js
+
 export const getAllInvoices = handleAsync(async (req, res) => {
-    const { page = 1, limit = 10 } = req.query;
+  // 1. Lấy tất cả hóa đơn và CHỈ populate order_ids ở mức cơ bản
+  const invoices = await Invoice.find()
+    .populate('table_id')
+    .populate('order_ids') // Chỉ lấy ra các Order, chưa có Items
+    .sort({ created_at: -1 })
+    .lean(); // QUAN TRỌNG: Dùng .lean() để biến Mongoose Document thành Object Javascript thường, giúp ta tự do thêm thuộc tính 'items'
 
-    const invoices = await Invoice.find()
-        .populate('table_id', 'table_number')
-        .populate('user_id', 'username') // Nhân viên thanh toán
-        .sort({ createdAt: -1 }) // Mới nhất lên đầu
-        .limit(limit * 1)
-        .skip((page - 1) * limit);
+  if (!invoices || invoices.length === 0) {
+    return createResponse(res, 200, "Lấy danh sách thành công", []);
+  }
 
-    const total = await Invoice.countDocuments();
+  // 2. Gom TẤT CẢ ID đơn hàng (order_ids) từ các hóa đơn vào 1 mảng duy nhất
+  const allOrderIds = [];
+  invoices.forEach(inv => {
+    if (inv.order_ids && inv.order_ids.length > 0) {
+      inv.order_ids.forEach(order => {
+        allOrderIds.push(order._id);
+      });
+    }
+  });
 
-    return createResponse(res, 200, 'Lấy danh sách hóa đơn thành công', {
-        invoices,
-        totalPages: Math.ceil(total / limit),
-        currentPage: page
-    });
+  // 3. Chọc vào bảng OrderItem: Lấy tất cả món ăn thuộc các đơn hàng trên
+  const allOrderItems = await OrderItem.find({ order_id: { $in: allOrderIds } })
+    .populate('dish_id', 'dish_name price image_url'); // Lấy luôn tên món
+
+  // 4. Lắp ráp: Nhét các món ăn vào đúng đơn hàng của nó
+  invoices.forEach(inv => {
+    if (inv.order_ids) {
+      inv.order_ids.forEach(order => {
+        // Lọc ra những món ăn có order_id trùng với _id của đơn hàng hiện tại
+        order.items = allOrderItems.filter(
+          item => item.order_id.toString() === order._id.toString()
+        );
+      });
+    }
+  });
+
+  // Trả về Frontend
+  return createResponse(res, 200, "Lấy danh sách hóa đơn thành công", invoices);
 });
 
 // 2. Lấy chi tiết 1 hóa đơn
