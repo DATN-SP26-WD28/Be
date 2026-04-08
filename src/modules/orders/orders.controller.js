@@ -126,7 +126,7 @@ export const createOrderByStaff = handleAsync(async (req, res) => {
 export const getAllOrders = handleAsync(async (req, res) => {
   // 1. Chỉ tìm các đơn hàng đang hoạt động (Chưa hoàn thành, chưa hủy)
   const orders = await Order.find({
-    status: { $nin: ['completed', 'cancelled'] }
+    status: { $nin: ['completed', 'canceled'] }
   })
     .populate('table_id', 'table_number location')
     .populate('guest_id', 'username')
