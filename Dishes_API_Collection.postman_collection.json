@@ -1,0 +1,183 @@
+{
+  "info": {
+    "name": "Dishes API Collection",
+    "description": "Collection for testing Dishes API with soft delete, restore, and visibility toggle",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Create Dish",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"dish_name\": \"Phở Bò\",\n  \"category_id\": \"507f1f77bcf86cd799439011\",\n  \"description\": \"Món phở truyền thống\",\n  \"price\": 50000,\n  \"status\": \"available\",\n  \"image_url\": \"https://example.com/pho.jpg\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/dishes",
+          "host": ["{{base_url}}"],
+          "path": ["dishes"]
+        }
+      }
+    },
+    {
+      "name": "Get All Dishes",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/dishes",
+          "host": ["{{base_url}}"],
+          "path": ["dishes"]
+        }
+      }
+    },
+    {
+      "name": "Get All Dishes (Include Deleted)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/dishes?includeDeleted=true",
+          "host": ["{{base_url}}"],
+          "path": ["dishes"],
+          "query": [
+            {
+              "key": "includeDeleted",
+              "value": "true"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Get All Dishes (Include Hidden)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/dishes?includeHidden=true",
+          "host": ["{{base_url}}"],
+          "path": ["dishes"],
+          "query": [
+            {
+              "key": "includeHidden",
+              "value": "true"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Get Dish by ID",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/dishes/:id",
+          "host": ["{{base_url}}"],
+          "path": ["dishes", ":id"],
+          "variable": [
+            {
+              "key": "id",
+              "value": "507f1f77bcf86cd799439011"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Update Dish",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"price\": 55000,\n  \"description\": \"Món phở bò ngon\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/dishes/:id",
+          "host": ["{{base_url}}"],
+          "path": ["dishes", ":id"],
+          "variable": [
+            {
+              "key": "id",
+              "value": "507f1f77bcf86cd799439011"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Soft Delete Dish",
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/dishes/:id",
+          "host": ["{{base_url}}"],
+          "path": ["dishes", ":id"],
+          "variable": [
+            {
+              "key": "id",
+              "value": "507f1f77bcf86cd799439011"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Restore Dish",
+      "request": {
+        "method": "PATCH",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/dishes/:id/restore",
+          "host": ["{{base_url}}"],
+          "path": ["dishes", ":id", "restore"],
+          "variable": [
+            {
+              "key": "id",
+              "value": "507f1f77bcf86cd799439011"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Toggle Visibility",
+      "request": {
+        "method": "PATCH",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/dishes/:id/toggle-visibility",
+          "host": ["{{base_url}}"],
+          "path": ["dishes", ":id", "toggle-visibility"],
+          "variable": [
+            {
+              "key": "id",
+              "value": "507f1f77bcf86cd799439011"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:3000/api"
+    }
+  ]
+}
