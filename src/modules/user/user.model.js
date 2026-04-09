@@ -8,7 +8,7 @@ const userSchema = new mongoose.Schema({
     trim: true,
     minlength: [3, 'Tên đăng nhập phải ít nhất 3 ký tự'],
     maxlength: [50, 'Tên đăng nhập không được vượt quá 50 ký tự'],
-    match: [/^[a-zA-Z\s]+$/, 'Tên không hợp lệ']
+    match: [/^[\p{L}\s]+$/u, 'Tên không hợp lệ']
   },
   email: {
     type: String,
