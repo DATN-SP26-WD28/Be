@@ -1,4 +1,6 @@
 import express from "express";
+import http from "http";
+import { Server } from "socket.io";
 import router from "./src/routes/index.js";
 import connectDB from "./src/shared/configs/connectDB.js";
 import { HOST, PORT } from "./src/shared/configs/dotenvConfig.js";
@@ -6,9 +8,12 @@ import notFoundRequest from "./src/shared/middlewares/notFoundRequest.js";
 import cors from "cors";
 import morgan from "morgan";
 import cookieParser from "cookie-parser";
+import { setIO } from "./src/shared/utils/socket.js";
+import { SOCKET_EVENTS, SOCKET_ROOMS } from "./src/shared/constants/socket.constants.js";
 import 'dotenv/config';
 
 const app = express();
+const server = http.createServer(app);
 
 // 1. Middlewares cơ bản
 app.use(cookieParser());
@@ -29,6 +34,43 @@ app.use(
     credentials: true,
   })
 );
+
+const io = new Server(server, {
+  cors: {
+    origin: (origin, callback) => {
+      if (!origin || origin.includes('localhost') || origin.includes('127.0.0.1')) {
+        callback(null, true);
+      } else {
+        callback(new Error('CORS: Nguồn truy cập không được phép!'));
+      }
+    },
+    credentials: true,
+  },
+});
+
+setIO(io);
+
+io.on(SOCKET_EVENTS.CONNECT, (socket) => {
+  console.info(`[socket] connected: ${socket.id}`);
+
+  socket.on(SOCKET_EVENTS.JOIN_TABLE, (tableId) => {
+    if (!tableId) return;
+    socket.join(SOCKET_ROOMS.table(tableId));
+  });
+
+  socket.on(SOCKET_EVENTS.JOIN_ORDER, (orderId) => {
+    if (!orderId) return;
+    socket.join(SOCKET_ROOMS.order(orderId));
+  });
+
+  socket.on(SOCKET_EVENTS.JOIN_ADMIN_ORDERS, () => {
+    socket.join(SOCKET_ROOMS.ADMIN_ORDERS);
+  });
+
+  socket.on(SOCKET_EVENTS.DISCONNECT, (reason) => {
+    console.info(`[socket] disconnected: ${socket.id} (${reason})`);
+  });
+});
 
 // 3. Kết nối Database
 connectDB();
@@ -88,6 +130,6 @@ app.use((err, req, res, next) => {
 });
 
 // 7. Khởi động Server
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`🚀 Roosta Server is running on: ${HOST}:${PORT}`);
 });

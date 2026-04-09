@@ -5,6 +5,8 @@ import Table from '../tables/tables.model.js';
 import handleAsync from '../../shared/utils/handleAsync.js';
 import createError from '../../shared/utils/createError.js';
 import createResponse from '../../shared/utils/createResponse.js';
+import { getIO } from '../../shared/utils/socket.js';
+import { SOCKET_EVENTS, SOCKET_ROOMS } from '../../shared/constants/socket.constants.js';
 
 // 1. Tạo đơn hàng mới (Dành cho Guest/Customer)
 export const createOrder = handleAsync(async (req, res) => {
@@ -42,6 +44,28 @@ export const createOrder = handleAsync(async (req, res) => {
   });
 
   await OrderItem.insertMany(orderItemsData);
+
+  const io = getIO();
+  if (io) {
+    const tableId = newOrder?.table_id?.toString();
+    const table = await Table.findById(newOrder?.table_id).select('table_number');
+    const tableNumber = table?.table_number?.toString();
+    const payload = {
+      orderId: newOrder?._id?.toString(),
+      tableId,
+      tableNumber,
+      status: newOrder?.status,
+      createdAt: newOrder?.createdAt,
+    };
+
+    io.to(SOCKET_ROOMS.ADMIN_ORDERS).emit(SOCKET_EVENTS.ORDER_CREATED, payload);
+    if (tableId) {
+      io.to(SOCKET_ROOMS.table(tableId)).emit(SOCKET_EVENTS.ORDER_CREATED, payload);
+    }
+    if (tableNumber) {
+      io.to(SOCKET_ROOMS.table(tableNumber)).emit(SOCKET_EVENTS.ORDER_CREATED, payload);
+    }
+  }
 
   return createResponse(res, 201, 'Đặt món thành công!', newOrder);
 });
@@ -107,6 +131,27 @@ export const createOrderByStaff = handleAsync(async (req, res) => {
     status: 'pending',
   }));
   await OrderItem.insertMany(orderItemsData);
+
+  const io = getIO();
+  if (io) {
+    const tableId = newOrder?.table_id?.toString();
+    const tableNumber = table?.table_number?.toString();
+    const payload = {
+      orderId: newOrder?._id?.toString(),
+      tableId,
+      tableNumber,
+      status: newOrder?.status,
+      createdAt: newOrder?.createdAt,
+    };
+
+    io.to(SOCKET_ROOMS.ADMIN_ORDERS).emit(SOCKET_EVENTS.ORDER_CREATED, payload);
+    if (tableId) {
+      io.to(SOCKET_ROOMS.table(tableId)).emit(SOCKET_EVENTS.ORDER_CREATED, payload);
+    }
+    if (tableNumber) {
+      io.to(SOCKET_ROOMS.table(tableNumber)).emit(SOCKET_EVENTS.ORDER_CREATED, payload);
+    }
+  }
 
   // --- BƯỚC QUAN TRỌNG: XỬ LÝ DỮ LIỆU TRẢ VỀ ---
   // Chuyển Mongoose document sang Object JS thuần
