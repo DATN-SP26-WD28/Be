@@ -366,12 +366,16 @@ export const handleSepayWebhook = async (req, res) => {
         console.log(`-> ✅ Thanh toán thành công bàn ${leadOrder.table_id}. Đã giải phóng bàn.`);
 
         // 8. Bắn Socket báo cho Frontend (OrdersPage.jsx) để tự tắt Modal QR
+        // Trong payments.controller.js
         const io = getIO();
         if (io) {
-            io.emit('payment_success', {
-                tableId: leadOrder.table_id,
-                message: "Thanh toán thành công qua VietQR!"
+            // Cách 1: Phát cho tất cả mọi người đang kết nối (Broadcast toàn sàn)
+            io.sockets.emit('payment_success', {
+                tableId: String(leadOrder.table_id)
             });
+            console.log("-> ✅ Đã cố gắng bắn Socket 'payment_success' toàn hệ thống!");
+        } else {
+            console.error("-> ❌ LỖI: getIO() trả về null, không thể bắn socket!");
         }
 
         return res.status(200).json({ success: true });
