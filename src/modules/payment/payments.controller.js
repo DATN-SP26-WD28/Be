@@ -10,6 +10,8 @@ import Payment from './payments.model.js';
 import createError from '../../shared/utils/createError.js';
 import createResponse from '../../shared/utils/createResponse.js';
 import { OrderItem } from '../order_items/order_items.model.js';
+import io from "socket.io"
+import { getIO } from '../../shared/utils/socket.js';
 
 
 function sortObject(obj) {
@@ -282,76 +284,79 @@ export const processCounterPayment = handleAsync(async (req, res) => {
     return createResponse(res, 201, "Thanh toán thành công!", invoice);
 });
 
+
+
 export const handleSepayWebhook = async (req, res) => {
     try {
+        console.log("=== 🚀 BẮT ĐẦU NHẬN WEBHOOK TỪ SEPAY ===");
+        
         // 1. Lấy dữ liệu SePay gửi sang
-        const {
-            transferAmount, // Số tiền khách chuyển
-            content,        // Nội dung chuyển khoản (VD: "nguyen van a chuyen tien ROOSTA123456")
-            transferType    // Loại giao dịch ('in' là tiền vào, 'out' là tiền ra)
-        } = req.body;
+        const transferAmount = req.body.transferAmount;
+        const content = req.body.content || req.body.description || req.body.transactionContent || ""; 
+        const transferType = req.body.transferType;
 
-        // Chỉ xử lý khi có tiền VÀO tài khoản
+        // Chỉ xử lý khi có tiền VÀO
         if (transferType !== 'in') {
-            return res.status(200).json({ success: true, message: "Không phải giao dịch cộng tiền" });
+            console.log("-> Bỏ qua vì đây không phải giao dịch cộng tiền.");
+            return res.status(200).json({ success: true });
         }
 
-        // 2. Dùng Regex để tìm mã đơn hàng trong nội dung chuyển khoản
-        // Cấu trúc lúc nãy mình gán ở Frontend là: ROOSTA + 6 số cuối của Order ID
+        // 2. Tìm mã đơn hàng (ROOSTA + 6 số cuối)
         const match = content.match(/ROOSTA([A-Z0-9]+)/i);
-
-        if (match) {
-            const orderShortCode = match[1]; // Lấy được 6 ký tự cuối (VD: 123456)
-
-            // 3. Tìm tất cả đơn hàng đang 'chưa thanh toán' (để tính tổng tiền)
-            // Lưu ý: Vì mình chỉ có 6 số cuối, nên dùng Regex của MongoDB để tìm _id kết thúc bằng đoạn chuỗi đó
-            const order = await Order.findOne({
-                $expr: {
-                    $eq: [{ $substr: [{ $toString: "$_id" }, 18, 6] }, orderShortCode.toLowerCase()]
-                },
-                status: { $nin: ['completed', 'canceled'] }
-            });
-
-            if (order) {
-                // TÍNH TỔNG TIỀN (Giống hệt logic ở getAllOrders của bạn)
-                // ... (Thực hiện logic query OrderItem và tính total_amount ở đây)
-                // Giả sử tính ra được `actualTotalAmount`
-
-                const actualTotalAmount = order.total_amount; // Thay bằng biến tổng tiền thực tế bạn tính được
-
-                // 4. Kiểm tra xem khách chuyển ĐỦ tiền không
-                if (Number(transferAmount) >= Number(actualTotalAmount)) {
-
-                    // --- CHỐT ĐƠN ---
-                    // A. Cập nhật trạng thái Order
-                    order.status = 'completed';
-                    await order.save();
-
-                    // B. Tạo Hóa đơn (Invoice) lưu vào DB
-                    const newInvoice = new Invoice({
-                        invoice_number: `INV-SEPAY-${Date.now()}`,
-                        table_id: order.table_id,
-                        order_ids: [order._id],
-                        total_amount: actualTotalAmount,
-                        status: 'paid',
-                        payment_method: 'sepay'
-                    });
-                    await newInvoice.save();
-
-                    // C. Bắn Socket báo cho Frontend biết để tự động đóng giao diện QR
-                    // const io = getIO();
-                    // io.emit('payment_success', { tableId: order.table_id });
-                }
-            }
+        if (!match) {
+            console.log("-> ❌ Không tìm thấy mã ROOSTA trong nội dung:", content);
+            return res.status(200).json({ success: true });
         }
 
-        // 5. RẤT QUAN TRỌNG: Luôn phải trả về HTTP Status 200 cho SePay
-        // Nếu không trả về 200, SePay sẽ nghĩ server bạn lỗi và liên tục gọi lại API này
+        const orderShortCode = match[1]; 
+        console.log("-> ✅ Mã đơn hàng rút trích được:", orderShortCode);
+
+        // 3. Tìm Order trong Database
+        const order = await Order.findOne({
+            $expr: {
+                $eq: [{ $substr: [{ $toString: "$_id" }, 18, 6] }, orderShortCode.toLowerCase()]
+            },
+            status: { $nin: ['completed', 'canceled'] }
+        });
+
+        if (!order) {
+            console.log("-> ❌ Không tìm thấy Order đang chờ thanh toán với mã này!");
+            return res.status(200).json({ success: true });
+        }
+
+        console.log("-> ✅ Đã tìm thấy Order:", order._id);
+
+        // --- CHỐT ĐƠN ---
+        // A. Cập nhật trạng thái Order
+        order.status = 'completed';
+        await order.save();
+        console.log("-> ✅ Đã cập nhật trạng thái Order thành 'completed'");
+
+        // B. Tạo Hóa đơn (Invoice) lưu lịch sử
+        const newInvoice = new Invoice({
+            invoice_number: `INV-SEPAY-${Date.now()}`,
+            table_id: order.table_id,
+            order_ids: [order._id],
+            total_amount: Number(transferAmount),
+            status: 'paid',
+            payment_method: 'sepay'
+        });
+        await newInvoice.save();
+        console.log("-> ✅ Đã tạo Invoice thành công");
+
+        // C. Bắn Socket báo cho Frontend biết
+        const io = getIO(); 
+        if (io) {
+            io.emit('payment_success', { tableId: order.table_id });
+            console.log(`-> ✅ Đã bắn tín hiệu Socket 'payment_success' tới Bàn ${order.table_id}!`);
+        }
+
+        console.log("=== 🎉 KẾT THÚC XỬ LÝ WEBHOOK THÀNH CÔNG ===");
         return res.status(200).json({ success: true });
 
     } catch (error) {
-        console.error("Lỗi xử lý Webhook SePay:", error);
-        // Vẫn trả về 200 để SePay không spam, nhưng log lỗi ra để mình debug
-        return res.status(200).json({ success: false, message: "Lỗi nội bộ Server" });
+        console.error("🔥 LỖI CATCH WEBHOOK:", error);
+        // Vẫn trả về 200 để SePay không nghĩ là server chết và gọi lại liên tục
+        return res.status(200).json({ success: false, message: "Lỗi nội bộ xử lý Webhook" });
     }
 };
