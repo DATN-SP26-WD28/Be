@@ -366,18 +366,28 @@ export const handleSepayWebhook = async (req, res) => {
         console.log(`-> ✅ Thanh toán thành công bàn ${leadOrder.table_id}. Đã giải phóng bàn.`);
 
         // 8. Bắn Socket báo cho Frontend (OrdersPage.jsx) để tự tắt Modal QR
-        // Trong payments.controller.js
+
         const io = getIO();
         if (io) {
-            // Cách 1: Phát cho tất cả mọi người đang kết nối (Broadcast toàn sàn)
-            io.sockets.emit('payment_success', {
-                tableId: String(leadOrder.table_id)
-            });
-            console.log("-> ✅ Đã cố gắng bắn Socket 'payment_success' toàn hệ thống!");
-        } else {
-            console.error("-> ❌ LỖI: getIO() trả về null, không thể bắn socket!");
-        }
+            const targetRoom = String(leadOrder.table_id); // Ở đây là "1"
 
+            console.log(`-> 📢 Đang phát loa tới phòng: ${targetRoom}`);
+
+            // Cách 1: Bắn vào đúng phòng (Chuẩn nhất)
+            io.to(targetRoom).emit('payment_success', {
+                tableId: targetRoom,
+                message: "Thanh toán thành công!"
+            });
+
+            // Cách 2: Bắn cho tất cả mọi người (Dự phòng nếu Room bị lỗi)
+            io.emit('payment_success', {
+                tableId: targetRoom
+            });
+
+            console.log("-> ✅ Đã bắn tín hiệu thành công!");
+        } else {
+            console.error("-> ❌ LỖI: ioInstance đang bị NULL. Hãy kiểm tra lại hàm setIO trong server.js");
+        }
         return res.status(200).json({ success: true });
 
     } catch (error) {
