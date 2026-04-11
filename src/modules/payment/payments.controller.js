@@ -10,7 +10,6 @@ import Payment from './payments.model.js';
 import createError from '../../shared/utils/createError.js';
 import createResponse from '../../shared/utils/createResponse.js';
 import { OrderItem } from '../order_items/order_items.model.js';
-import io from "socket.io"
 import { getIO } from '../../shared/utils/socket.js';
 
 
@@ -286,77 +285,99 @@ export const processCounterPayment = handleAsync(async (req, res) => {
 
 
 
+
 export const handleSepayWebhook = async (req, res) => {
     try {
-        console.log("=== 🚀 BẮT ĐẦU NHẬN WEBHOOK TỪ SEPAY ===");
-        
-        // 1. Lấy dữ liệu SePay gửi sang
-        const transferAmount = req.body.transferAmount;
-        const content = req.body.content || req.body.description || req.body.transactionContent || ""; 
-        const transferType = req.body.transferType;
+        console.log("=== 🚀 NHẬN WEBHOOK SEPAY: XỬ LÝ NHƯ POS TẠI QUẦY ===");
 
-        // Chỉ xử lý khi có tiền VÀO
-        if (transferType !== 'in') {
-            console.log("-> Bỏ qua vì đây không phải giao dịch cộng tiền.");
-            return res.status(200).json({ success: true });
-        }
+        const { transferAmount, content, transferType } = req.body;
 
-        // 2. Tìm mã đơn hàng (ROOSTA + 6 số cuối)
+        if (transferType !== 'in') return res.status(200).json({ success: true });
+
+        // 1. Rút trích mã 6 ký tự cuối ID đơn hàng
         const match = content.match(/ROOSTA([A-Z0-9]+)/i);
         if (!match) {
-            console.log("-> ❌ Không tìm thấy mã ROOSTA trong nội dung:", content);
+            console.log("-> ❌ Nội dung không chứa mã ROOSTA");
             return res.status(200).json({ success: true });
         }
 
-        const orderShortCode = match[1]; 
-        console.log("-> ✅ Mã đơn hàng rút trích được:", orderShortCode);
+        const orderShortCode = match[1];
 
-        // 3. Tìm Order trong Database
-        const order = await Order.findOne({
+        // 2. Tìm một đơn hàng làm "gốc" để xác định bàn (table_id)
+        const leadOrder = await Order.findOne({
             $expr: {
-                $eq: [{ $substr: [{ $toString: "$_id" }, 18, 6] }, orderShortCode.toLowerCase()]
+                $eq: [
+                    { $toLower: { $substr: [{ $toString: "$_id" }, 18, 6] } },
+                    orderShortCode.toLowerCase()
+                ]
             },
-            status: { $nin: ['completed', 'canceled'] }
+            status: { $nin: ['completed', 'cancelled'] }
         });
 
-        if (!order) {
-            console.log("-> ❌ Không tìm thấy Order đang chờ thanh toán với mã này!");
+        if (!leadOrder) {
+            console.log("-> ❌ Không tìm thấy đơn hàng khớp mã hoặc đơn đã đóng.");
             return res.status(200).json({ success: true });
         }
 
-        console.log("-> ✅ Đã tìm thấy Order:", order._id);
-
-        // --- CHỐT ĐƠN ---
-        // A. Cập nhật trạng thái Order
-        order.status = 'completed';
-        await order.save();
-        console.log("-> ✅ Đã cập nhật trạng thái Order thành 'completed'");
-
-        // B. Tạo Hóa đơn (Invoice) lưu lịch sử
-        const newInvoice = new Invoice({
-            invoice_number: `INV-SEPAY-${Date.now()}`,
-            table_id: order.table_id,
-            order_ids: [order._id],
-            total_amount: Number(transferAmount),
-            status: 'paid',
-            payment_method: 'sepay'
+        // 3. Tìm tất cả các đơn hàng chưa hoàn thành của cái bàn đó (Y hệt hàm POS của bạn)
+        const activeOrders = await Order.find({
+            table_id: leadOrder.table_id,
+            status: { $nin: ['completed', 'cancelled'] }
         });
-        await newInvoice.save();
-        console.log("-> ✅ Đã tạo Invoice thành công");
 
-        // C. Bắn Socket báo cho Frontend biết
-        const io = getIO(); 
-        if (io) {
-            io.emit('payment_success', { tableId: order.table_id });
-            console.log(`-> ✅ Đã bắn tín hiệu Socket 'payment_success' tới Bàn ${order.table_id}!`);
+        const orderIds = activeOrders.map(o => o._id);
+
+        // 4. LOGIC TÍNH TIỀN MÓN ĐÃ PHỤC VỤ (Dùng hàm calculateServedAmount bạn đã có)
+        // Lưu ý: Đảm bảo hàm calculateServedAmount đã được import vào file này
+        const finalAmount = await calculateServedAmount(orderIds);
+
+        if (finalAmount <= 0) {
+            console.log("-> ❌ Bàn có đơn nhưng chưa có món nào hoàn thành phục vụ.");
+            return res.status(200).json({ success: true });
         }
 
-        console.log("=== 🎉 KẾT THÚC XỬ LÝ WEBHOOK THÀNH CÔNG ===");
+        // --- BẮT ĐẦU LƯU DỮ LIỆU VÀO DB (Copy logic từ POS) ---
+
+        // 5. Tạo Hóa đơn (Invoice)
+        const invoice = await Invoice.create({
+            invoice_number: `INV-SEPAY-${Date.now()}`,
+            table_id: leadOrder.table_id,
+            order_ids: orderIds,
+            total_amount: finalAmount,
+            status: 'paid',
+            payment_method: 'sepay', // Đánh dấu là SePay để dễ phân loại
+            split_count: 1
+        });
+
+        // 6. Tạo Giao dịch (Payment)
+        await Payment.create({
+            invoice_id: invoice._id,
+            method: 'sepay',
+            amount_paid: Number(transferAmount), // Số tiền thực tế khách quét
+            status: 'success',
+            transaction_id: `SEPAY-${Date.now()}`,
+            note: `Thanh toán tự động qua SePay (VietQR)`
+        });
+
+        // 7. Cập nhật trạng thái các Order và giải phóng bàn
+        await Order.updateMany({ _id: { $in: orderIds } }, { $set: { status: 'completed' } });
+        await Table.findByIdAndUpdate(leadOrder.table_id, { status: 'available' });
+
+        console.log(`-> ✅ Thanh toán thành công bàn ${leadOrder.table_id}. Đã giải phóng bàn.`);
+
+        // 8. Bắn Socket báo cho Frontend (OrdersPage.jsx) để tự tắt Modal QR
+        const io = getIO();
+        if (io) {
+            io.emit('payment_success', {
+                tableId: leadOrder.table_id,
+                message: "Thanh toán thành công qua VietQR!"
+            });
+        }
+
         return res.status(200).json({ success: true });
 
     } catch (error) {
-        console.error("🔥 LỖI CATCH WEBHOOK:", error);
-        // Vẫn trả về 200 để SePay không nghĩ là server chết và gọi lại liên tục
-        return res.status(200).json({ success: false, message: "Lỗi nội bộ xử lý Webhook" });
+        console.error("🔥 LỖI WEBHOOK SEPAY:", error);
+        return res.status(200).json({ success: false });
     }
-};
+}
