@@ -288,7 +288,7 @@ export const processCounterPayment = handleAsync(async (req, res) => {
 export const handleSepayWebhook = async (req, res) => {
     try {
         console.log("=== 🚀 NHẬN WEBHOOK TỪ SEPAY ===");
-
+        
         // 1. Lấy dữ liệu chính xác theo Request SePay gửi
         const { transferAmount, content, transferType } = req.body;
 
@@ -303,7 +303,7 @@ export const handleSepayWebhook = async (req, res) => {
             return res.status(200).json({ success: true });
         }
 
-        const orderShortCode = match[1].toLowerCase();
+        const orderShortCode = match[1].toLowerCase(); 
         console.log("-> ✅ Mã đơn rút trích:", orderShortCode);
 
         // 3. Tìm Order - Quan trọng: Dùng Regex để tìm 6 ký tự cuối của ID
