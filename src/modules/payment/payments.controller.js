@@ -287,82 +287,59 @@ export const processCounterPayment = handleAsync(async (req, res) => {
 
 export const handleSepayWebhook = async (req, res) => {
     try {
-        console.log("=== 🚀 NHẬN WEBHOOK TỪ SEPAY ===");
-        
-        // 1. Lấy dữ liệu chính xác theo Request SePay gửi
         const { transferAmount, content, transferType } = req.body;
+        if (transferType !== 'in') return res.status(200).send("OK");
 
-        if (transferType !== 'in') {
-            return res.status(200).json({ success: true, message: "Không phải giao dịch tiền vào" });
-        }
-
-        // 2. Tìm mã ROOSTA6675EB
+        // 1. Rút mã đơn (Ví dụ: 6675EB)
         const match = content.match(/ROOSTA([A-Z0-9]+)/i);
-        if (!match) {
-            console.log("-> ❌ Không tìm thấy mã đơn hàng trong nội dung:", content);
-            return res.status(200).json({ success: true });
-        }
+        if (!match) return res.status(200).send("Không tìm thấy mã");
 
-        const orderShortCode = match[1].toLowerCase(); 
-        console.log("-> ✅ Mã đơn rút trích:", orderShortCode);
+        const orderShortCode = match[1].toLowerCase();
 
-        // 3. Tìm Order - Quan trọng: Dùng Regex để tìm 6 ký tự cuối của ID
-        // Vì MongoDB ID là string 24 ký tự, nên 6 ký tự cuối bắt đầu từ vị trí 18
+        // 2. Tìm Order và JOIN với bảng Table để lấy table_number
         const order = await Order.findOne({
             $expr: {
-                $eq: [
-                    { $toLower: { $substr: [{ $toString: "$_id" }, 18, 6] } },
-                    orderShortCode
-                ]
+                $eq: [{ $toLower: { $substr: [{ $toString: "$_id" }, 18, 6] } }, orderShortCode]
             },
             status: { $nin: ['completed', 'cancelled'] }
-        });
+        }).populate('table_id'); // Lấy thông tin bàn
 
-        if (!order) {
-            console.log("-> ❌ Không tìm thấy đơn hàng khớp mã trong DB!");
-            return res.status(200).json({ success: true });
+        if (!order || !order.table_id) {
+            console.log("-> ❌ Không tìm thấy đơn hoặc bàn tương ứng");
+            return res.status(200).send("OK");
         }
 
-        // 4. THỰC HIỆN CHỐT ĐƠN (Giống logic POS của bạn)
-        // Tạo Invoice
+        const tableNumber = String(order.table_id.table_number); // Lấy số bàn (VD: "1")
+
+        // 3. Xử lý DB (Tạo Invoice & Update trạng thái)
         const invoice = await Invoice.create({
             invoice_number: `INV-SEPAY-${Date.now()}`,
-            table_id: order.table_id,
+            table_id: order.table_id._id,
             order_ids: [order._id],
             total_amount: Number(transferAmount),
             status: 'paid',
             payment_method: 'sepay'
         });
 
-        // Tạo Payment Record
-        await Payment.create({
-            invoice_id: invoice._id,
-            method: 'sepay',
-            amount_paid: Number(transferAmount),
-            status: 'success',
-            transaction_id: req.body.referenceCode || `SP-${Date.now()}`,
-            note: `Thanh toán tự động SePay cho đơn #${orderShortCode}`
-        });
-
-        // Cập nhật Order & Giải phóng bàn
         await Order.findByIdAndUpdate(order._id, { status: 'completed' });
-        await Table.findByIdAndUpdate(order.table_id, { status: 'available' });
+        await Table.findByIdAndUpdate(order.table_id._id, { status: 'available' });
 
-        console.log("-> ✅ Đã chốt đơn và giải phóng bàn thành công!");
-
-        // 5. Bắn Socket (Dùng io.emit cho an toàn nhất)
+        // 4. BẮN SOCKET THEO TABLE_NUMBER (Để khớp với Frontend của bạn)
         const io = getIO();
         if (io) {
-            io.emit('payment_success', { tableId: String(order.table_id) });
-            console.log("-> ✅ Đã bắn Socket báo hiệu cho Frontend");
+            console.log(`-> 📢 Bắn tín hiệu thành công tới bàn số: ${tableNumber}`);
+            
+            // Bắn cả 2 kiểu cho chắc chắn: 
+            // 1. Bắn cho toàn sàn
+            io.emit('payment_success', { tableId: tableNumber }); 
+            
+            // 2. Bắn vào Room (vì Frontend của bạn có join room theo tableId)
+            io.to(tableNumber).emit('payment_success', { tableId: tableNumber });
         }
 
-        // 6. TRẢ VỀ 200 ĐỂ SEPAY HIỆN MÀU XANH
         return res.status(200).send("OK");
-
     } catch (error) {
-        console.error("🔥 LỖI XỬ LÝ WEBHOOK:", error.message);
-        // Vẫn trả về 200 để SePay không gửi lại, nhưng chúng ta đã log lỗi ở Render rồi
-        return res.status(200).send("Lỗi Server nhưng đã nhận được request");
+        console.error("Lỗi Webhook:", error);
+        return res.status(200).send("Error");
     }
 };
