@@ -281,3 +281,77 @@ export const processCounterPayment = handleAsync(async (req, res) => {
 
     return createResponse(res, 201, "Thanh toán thành công!", invoice);
 });
+
+export const handleSepayWebhook = async (req, res) => {
+    try {
+        // 1. Lấy dữ liệu SePay gửi sang
+        const {
+            transferAmount, // Số tiền khách chuyển
+            content,        // Nội dung chuyển khoản (VD: "nguyen van a chuyen tien ROOSTA123456")
+            transferType    // Loại giao dịch ('in' là tiền vào, 'out' là tiền ra)
+        } = req.body;
+
+        // Chỉ xử lý khi có tiền VÀO tài khoản
+        if (transferType !== 'in') {
+            return res.status(200).json({ success: true, message: "Không phải giao dịch cộng tiền" });
+        }
+
+        // 2. Dùng Regex để tìm mã đơn hàng trong nội dung chuyển khoản
+        // Cấu trúc lúc nãy mình gán ở Frontend là: ROOSTA + 6 số cuối của Order ID
+        const match = content.match(/ROOSTA([A-Z0-9]+)/i);
+
+        if (match) {
+            const orderShortCode = match[1]; // Lấy được 6 ký tự cuối (VD: 123456)
+
+            // 3. Tìm tất cả đơn hàng đang 'chưa thanh toán' (để tính tổng tiền)
+            // Lưu ý: Vì mình chỉ có 6 số cuối, nên dùng Regex của MongoDB để tìm _id kết thúc bằng đoạn chuỗi đó
+            const order = await Order.findOne({
+                $expr: {
+                    $eq: [{ $substr: [{ $toString: "$_id" }, 18, 6] }, orderShortCode.toLowerCase()]
+                },
+                status: { $nin: ['completed', 'canceled'] }
+            });
+
+            if (order) {
+                // TÍNH TỔNG TIỀN (Giống hệt logic ở getAllOrders của bạn)
+                // ... (Thực hiện logic query OrderItem và tính total_amount ở đây)
+                // Giả sử tính ra được `actualTotalAmount`
+
+                const actualTotalAmount = order.total_amount; // Thay bằng biến tổng tiền thực tế bạn tính được
+
+                // 4. Kiểm tra xem khách chuyển ĐỦ tiền không
+                if (Number(transferAmount) >= Number(actualTotalAmount)) {
+
+                    // --- CHỐT ĐƠN ---
+                    // A. Cập nhật trạng thái Order
+                    order.status = 'completed';
+                    await order.save();
+
+                    // B. Tạo Hóa đơn (Invoice) lưu vào DB
+                    const newInvoice = new Invoice({
+                        invoice_number: `INV-SEPAY-${Date.now()}`,
+                        table_id: order.table_id,
+                        order_ids: [order._id],
+                        total_amount: actualTotalAmount,
+                        status: 'paid',
+                        payment_method: 'sepay'
+                    });
+                    await newInvoice.save();
+
+                    // C. Bắn Socket báo cho Frontend biết để tự động đóng giao diện QR
+                    // const io = getIO();
+                    // io.emit('payment_success', { tableId: order.table_id });
+                }
+            }
+        }
+
+        // 5. RẤT QUAN TRỌNG: Luôn phải trả về HTTP Status 200 cho SePay
+        // Nếu không trả về 200, SePay sẽ nghĩ server bạn lỗi và liên tục gọi lại API này
+        return res.status(200).json({ success: true });
+
+    } catch (error) {
+        console.error("Lỗi xử lý Webhook SePay:", error);
+        // Vẫn trả về 200 để SePay không spam, nhưng log lỗi ra để mình debug
+        return res.status(200).json({ success: false, message: "Lỗi nội bộ Server" });
+    }
+};
