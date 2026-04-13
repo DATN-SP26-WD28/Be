@@ -287,55 +287,46 @@ export const processCounterPayment = handleAsync(async (req, res) => {
 export const handleSepayWebhook = async (req, res) => {
     try {
         const { transferAmount, content, transferType } = req.body;
-        // Chỉ xử lý giao dịch tiền vào
         if (transferType !== 'in') return res.status(200).send("OK");
 
-        console.log(`[SePay] Nhận thanh toán: ${transferAmount}đ - Nội dung: ${content}`);
-
-        // 1. Trích mã đơn (Ví dụ: ROOSTA6675EB -> 6675eb)
+        // 1. Trích xuất mã đơn từ nội dung chuyển khoản
         const match = content.match(/ROOSTA([A-Z0-9]+)/i);
-        if (!match) {
-            console.log("[SePay] Nội dung không chứa mã ROOSTA hợp lệ");
-            return res.status(200).send("OK");
-        }
+        if (!match) return res.status(200).send("OK");
         const orderShortCode = match[1].toLowerCase();
 
-        // 2. Tìm đơn hàng mồi để lấy table_id (Dùng logic substring ID giống bạn đang dùng)
+        // 2. Tìm đơn hàng để xác định bàn (table_id)
         const leadOrder = await Order.findOne({
             $expr: { $eq: [{ $toLower: { $substr: [{ $toString: "$_id" }, 18, 6] } }, orderShortCode] }
-        }).populate('table_id');
+        });
 
-        if (!leadOrder || !leadOrder.table_id) {
-            console.log("[SePay] Không tìm thấy đơn hàng hoặc bàn từ mã code:", orderShortCode);
+        if (!leadOrder) {
+            console.error("Không tìm thấy đơn hàng với mã:", orderShortCode);
             return res.status(200).send("OK");
         }
 
-        const table = leadOrder.table_id;
+        // 3. Tìm thông tin Bàn (Để lấy table_number phục vụ Socket)
+        const table = await Table.findById(leadOrder.table_id);
+        if (!table) return res.status(200).send("OK");
 
-        // 3. Tìm TẤT CẢ đơn hàng đang hoạt động của bàn này (Giống hàm tại quầy)
+        // 4. Tìm TẤT CẢ đơn hàng đang hoạt động của bàn này (ĐỒNG BỘ VỚI POS)
         const activeOrders = await Order.find({
             table_id: table._id,
             status: { $nin: ['completed', 'cancelled'] }
         });
 
-        if (!activeOrders.length) {
-            console.log("[SePay] Bàn này hiện không có đơn hàng nào cần đóng.");
-            return res.status(200).send("OK");
-        }
-
+        if (activeOrders.length === 0) return res.status(200).send("OK");
         const orderIds = activeOrders.map(o => o._id);
 
-        // 4. LOGIC TÍNH TIỀN: Ưu tiên tính theo món đã phục vụ giống POS
-        // Đảm bảo hàm calculateServedAmount đã được import
+        // 5. Tính toán số tiền (ĐỒNG BỘ VỚI POS)
         let finalAmount = 0;
         try {
+            // Đảm bảo bạn đã import hàm này ở đầu file
             finalAmount = await calculateServedAmount(orderIds);
-        } catch (error) {
-            console.log("[SePay] Lỗi tính tiền Served, dùng số tiền chuyển khoản.");
+        } catch (e) {
             finalAmount = Number(transferAmount);
         }
 
-        // 5. TẠO HÓA ĐƠN (Invoice) & THANH TOÁN (Payment)
+        // 6. LƯU HÓA ĐƠN (Invoice) - Bước này quan trọng để truy vấn sau này
         const invoice = await Invoice.create({
             invoice_number: `INV-SEPAY-${Date.now()}`,
             table_id: table._id,
@@ -345,30 +336,31 @@ export const handleSepayWebhook = async (req, res) => {
             payment_method: 'sepay'
         });
 
+        // 7. LƯU CHI TIẾT THANH TOÁN (Payment)
         await Payment.create({
             invoice_id: invoice._id,
             method: 'sepay',
             amount_paid: Number(transferAmount),
             status: 'success',
-            transaction_id: `SEPAY-TX-${Date.now()}`,
-            note: `Thanh toán tự động VietQR - Nội dung: ${content}`
+            transaction_id: `SEPAY-${Date.now()}`,
+            note: content
         });
 
-        // 6. CẬP NHẬT TRẠNG THÁI (Đóng toàn bộ đơn và giải phóng bàn)
-        // Dùng updateMany để chắc chắn không còn đơn nào pending ở bàn này
+        // 8. CẬP NHẬT TRẠNG THÁI ĐƠN HÀNG (ĐỂ ẨN MÓN)
+        // Cập nhật toàn bộ đơn hàng của bàn đó thành completed
         await Order.updateMany(
-            { _id: { $in: orderIds } }, 
+            { _id: { $in: orderIds } },
             { $set: { status: 'completed' } }
         );
-        
+
+        // Giải phóng bàn
         await Table.findByIdAndUpdate(table._id, { status: 'available' });
 
-        console.log(`[SePay] Hoàn tất thanh toán bàn số ${table.table_number}.`);
+        console.log(`[Success] Đã lưu hóa đơn và đóng đơn hàng cho bàn ${table.table_number}`);
 
-        // 7. BẮN SOCKET REALTIME
+        // 9. BẮN SOCKET (Gửi số bàn để FE ẩn món)
         const io = getIO();
         if (io) {
-            // Gửi table_number cho FE vì FE của Khanh đang useParams là tableNumber
             io.emit('payment_success', { 
                 tableId: String(table.table_number),
                 invoiceId: invoice._id 
@@ -377,8 +369,7 @@ export const handleSepayWebhook = async (req, res) => {
 
         return res.status(200).send("OK");
     } catch (error) {
-        console.error("🔥 Lỗi nghiêm trọng Webhook:", error);
-        // Trả về 200 kèm tin nhắn lỗi để SePay ghi nhận đã gửi tin thành công, không gửi lại nữa
-        return res.status(200).send("Internal Server Error");
+        console.error("Lỗi Webhook:", error);
+        return res.status(200).send("Error");
     }
 };
