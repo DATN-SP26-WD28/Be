@@ -144,60 +144,53 @@ export const processCounterPayment = handleAsync(async (req, res) => {
 export const handleSepayWebhook = async (req, res) => {
     try {
         const { transferAmount, content, transferType } = req.body;
-
-        // 1. Bỏ qua nếu không phải tiền vào
+        
+        // 1. Bỏ qua nếu không phải giao dịch nhận tiền
         if (transferType !== 'in') return res.status(200).send("OK");
 
-        console.log("-----------------------------------------");
-        console.log("🔔 [SePay Webhook] Nhận biến động số dư:", transferAmount, "VNĐ");
-        console.log("📝 Nội dung:", content);
-
-        // 2. Trích xuất mã đơn (ROOSTA + 6 ký tự)
+        // 2. Lấy mã đơn (Ví dụ: ROOSTA108A34 -> 108a34)
         const match = content.match(/ROOSTA([A-Z0-9]+)/i);
         if (!match) return res.status(200).send("OK");
         const orderShortCode = match[1].toLowerCase();
 
-        // 3. Tìm đơn hàng mồi (Cắt 6 ký tự cuối của _id để so sánh)
+        // 3. Tìm đơn hàng mồi
         const leadOrder = await Order.findOne({
             $expr: { $eq: [{ $toLower: { $substr: [{ $toString: "$_id" }, 18, 6] } }, orderShortCode] }
         });
+        if (!leadOrder) return res.status(200).send("OK");
 
-        if (!leadOrder) {
-            console.log("⚠️ Không tìm thấy đơn hàng chứa mã:", orderShortCode);
-            return res.status(200).send("OK");
-        }
-
-        // 4. Tìm thông tin Bàn
+        // 4. Tìm Bàn (Giống cách processCounterPayment dùng Table.findOne)
         const table = await Table.findById(leadOrder.table_id);
         if (!table) return res.status(200).send("OK");
 
-        // 5. Tìm TẤT CẢ đơn hàng đang dở dang của bàn này
+        // 5. Lấy danh sách các đơn hàng hoạt động (Giống hệt processCounterPayment)
         const activeOrders = await Order.find({
             table_id: table._id,
             status: { $nin: ['completed', 'cancelled', 'canceled'] }
         });
 
-        if (!activeOrders.length) {
-            console.log("⚠️ Bàn", table.table_number, "không có đơn hàng nào cần đóng.");
-            return res.status(200).send("OK");
-        }
-
+        if (!activeOrders.length) return res.status(200).send("OK");
         const orderIds = activeOrders.map(o => o._id);
 
-        // 6. Tính tiền & Tạo Hóa đơn (Invoice)
+        // 6. Tính tiền dựa trên món đã phục vụ (Giống hệt processCounterPayment)
         let finalAmount = await calculateServedAmount(orderIds);
+        
+        // Lưu ý: Khác với tại quầy (trả lỗi 400 nếu finalAmount <= 0), 
+        // Webhook đã nhận tiền rồi nên ta phải dùng số tiền chuyển khoản để chốt đơn.
         const billingAmount = finalAmount > 0 ? finalAmount : Number(transferAmount);
 
+        // 7. Tạo Invoice (Giống hệt processCounterPayment)
         const invoice = await Invoice.create({
             invoice_number: `INV-SEPAY-${Date.now()}`,
             table_id: table._id,
             order_ids: orderIds,
             total_amount: billingAmount,
             status: 'paid',
-            payment_method: 'sepay'
+            payment_method: 'sepay', // Đảm bảo 'sepay' đã có trong enum của model Invoice
+            split_count: 1
         });
 
-        // 7. Lưu Lịch sử thanh toán (Payment)
+        // 8. Tạo Payment (Giống hệt processCounterPayment)
         await Payment.create({
             invoice_id: invoice._id,
             method: 'sepay',
@@ -207,60 +200,32 @@ export const handleSepayWebhook = async (req, res) => {
             note: content
         });
 
-        console.log("✅ Đã lưu thành công Invoice và Payment!");
+        // -------------------------------------------------------------
+        // 9. LOGIC ĐƠN, MÓN VÀ GIẢI PHÓNG BÀN (Dựa sát theo hàm của bạn)
+        // -------------------------------------------------------------
+        
+        // A. Cập nhật các Order (Giống hệt processCounterPayment)
+        await Order.updateMany({ _id: { $in: orderIds } }, { $set: { status: 'completed' } });
+        
+        // B. Cập nhật Món (Đảm bảo FE không còn hiển thị món pending)
+        await OrderItem.updateMany(
+            { order_id: { $in: orderIds }, status: { $ne: 'canceled' } }, 
+            { $set: { status: 'served' } }
+        );
 
-        // =================================================================
-        // 8. DỌN DẸP DỮ LIỆU (BỌC THÉP TỪNG BƯỚC ĐỂ TRÁNH CHẾT CHÙM)
-        // =================================================================
+        // C. Giải phóng bàn (Giống hệt processCounterPayment)
+        await Table.findByIdAndUpdate(table._id, { status: 'available' });
 
-        // 8.1. Đóng toàn bộ Order
-        try {
-            await Order.updateMany(
-                { _id: { $in: orderIds } },
-                { $set: { status: 'completed' } }
-            );
-            console.log("✅ Đã đổi trạng thái Order -> completed");
-        } catch (e) {
-            console.log("❌ Lỗi đổi trạng thái Order:", e.message);
+        // D. Bắn Socket cho Frontend
+        const io = getIO();
+        if (io) {
+            io.emit('payment_success', { tableId: String(table.table_number) });
         }
 
-        // 8.2. Đổi trạng thái các món ăn bên trong thành đã phục vụ (Để ẩn món trên FE)
-        try {
-            await OrderItem.updateMany(
-                { order_id: { $in: orderIds }, status: { $ne: 'canceled' } },
-                { $set: { status: 'served' } }
-            );
-            console.log("✅ Đã đổi trạng thái OrderItem -> served");
-        } catch (e) {
-            console.log("❌ Lỗi đổi trạng thái OrderItem:", e.message);
-        }
-
-        // 8.3. Giải phóng bàn
-        try {
-            await Table.findByIdAndUpdate(table._id, { status: 'available' });
-            console.log("✅ Đã giải phóng bàn số:", table.table_number);
-        } catch (e) {
-            console.log("❌ Lỗi giải phóng Table:", e.message);
-        }
-
-        // 8.4. Bắn Socket báo cho Frontend tự động F5/Đóng màn hình
-        try {
-            const io = getIO();
-            if (io) {
-                io.emit('payment_success', { tableId: String(table.table_number) });
-                console.log("✅ Đã bắn tín hiệu Socket thành công!");
-            }
-        } catch (e) {
-            console.log("❌ Lỗi bắn Socket:", e.message);
-        }
-
-        console.log("-----------------------------------------");
-        // Luôn trả về 200 OK để SePay biết đã nhận tin, không gọi lại nữa
         return res.status(200).send("OK");
 
     } catch (error) {
-        // Lỗi tổng quát ở những dòng lệnh đầu tiên
-        console.error("🔥 LỖI NGHIÊM TRỌNG WEBHOOK SEPAY:", error);
+        console.error("Lỗi Webhook:", error);
         return res.status(200).send("Error");
     }
 };
