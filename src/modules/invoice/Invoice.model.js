@@ -33,7 +33,7 @@ const invoiceSchema = new mongoose.Schema({
   },
   payment_method: {
     type: String,
-    enum: ['cash', 'banking', 'momo', 'vnpay'],
+    enum: ['cash', 'banking', 'momo', 'vnpay', 'sepay'],
     default: 'cash'
   },
   // Thêm thông tin chia tiền nếu Khanh muốn làm tính năng Split Bill
