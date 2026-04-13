@@ -84,9 +84,9 @@ export const createPaymentUrl = handleAsync(async (req, res) => {
     let signed = hmac.update(Buffer.from(signData, 'utf-8')).digest("hex");
     vnp_Params['vnp_SecureHash'] = signed;
 
-    return res.status(200).json({ 
-        paymentUrl: vnpayConfig.vnp_Url + '?' + qs.stringify(vnp_Params, { encode: false }), 
-        amount 
+    return res.status(200).json({
+        paymentUrl: vnpayConfig.vnp_Url + '?' + qs.stringify(vnp_Params, { encode: false }),
+        amount
     });
 });
 
@@ -146,15 +146,23 @@ export const handleSepayWebhook = async (req, res) => {
         const { transferAmount, content, transferType } = req.body;
         if (transferType !== 'in') return res.status(200).send("OK");
 
+        console.log("-> SePay Content:", content);
+
         const match = content.match(/ROOSTA([A-Z0-9]+)/i);
         if (!match) return res.status(200).send("OK");
         const orderShortCode = match[1].toLowerCase();
 
+        console.log("-> Trích xuất mã đơn:", orderShortCode);
+
+        // 1. TÌM ĐƠN HÀNG (Dùng lệnh $substr cơ bản nhất, an toàn 100%)
         const leadOrder = await Order.findOne({
             $expr: { $eq: [{ $toLower: { $substr: [{ $toString: "$_id" }, 18, 6] } }, orderShortCode] }
         });
 
-        if (!leadOrder) return res.status(200).send("OK");
+        if (!leadOrder) {
+            console.log("-> Không tìm thấy đơn hàng cho mã:", orderShortCode);
+            return res.status(200).send("OK");
+        }
 
         const table = await Table.findById(leadOrder.table_id);
         if (!table) return res.status(200).send("OK");
@@ -168,9 +176,9 @@ export const handleSepayWebhook = async (req, res) => {
         const orderIds = activeOrders.map(o => o._id);
 
         let finalAmount = await calculateServedAmount(orderIds);
-        // Fallback nếu không có món nào served nhưng đã có tiền vào
         const billingAmount = finalAmount > 0 ? finalAmount : Number(transferAmount);
 
+        // 2. TẠO HÓA ĐƠN & THANH TOÁN
         const invoice = await Invoice.create({
             invoice_number: `INV-SEPAY-${Date.now()}`,
             table_id: table._id,
@@ -189,23 +197,31 @@ export const handleSepayWebhook = async (req, res) => {
             note: content
         });
 
-        // QUÉT SẠCH TRẠNG THÁI ĐỂ ẨN MÓN
-        await Order.updateMany({ _id: { $in: orderIds } }, { $set: { status: 'completed' } });
+        // 3. ÉP TRẠNG THÁI ĐỂ ẨN MÓN NGAY LẬP TỨC
+        // Dùng Promise.all để chạy song song 2 lệnh update cho lẹ
+        await Promise.all([
+            Order.updateMany(
+                { _id: { $in: orderIds } },
+                { $set: { status: 'completed' } }
+            ),
+            OrderItem.updateMany(
+                { order_id: { $in: orderIds }, status: { $ne: 'canceled' } },
+                { $set: { status: 'served' } }
+            )
+        ]);
+
         await Table.findByIdAndUpdate(table._id, { status: 'available' });
 
-        // GỬI SOCKET REALTIME
+        // 4. BẮN SOCKET
         const io = getIO();
         if (io) {
-            io.emit('payment_success', { 
-                tableId: String(table.table_number),
-                invoiceId: invoice._id 
-            });
+            io.emit('payment_success', { tableId: String(table.table_number) });
         }
 
-        return res.status(200).send("OK");
+        return res.status(200).send("OK"); // Trả về OK để SePay báo xanh
     } catch (error) {
-        console.error("Lỗi Webhook SePay:", error);
+        // NẾU CÓ LỖI, IN RA LOG ĐỂ MÌNH ĐỌC
+        console.error("🔥 LỖI CRASH WEBHOOK:", error);
         return res.status(200).send("Error");
     }
 };
-
