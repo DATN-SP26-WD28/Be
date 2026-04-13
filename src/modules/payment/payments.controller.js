@@ -7,12 +7,11 @@ import Table from '../tables/tables.model.js';
 import handleAsync from '../../shared/utils/handleAsync.js';
 import { vnpayConfig } from '../../shared/configs/vnpay.configs.js';
 import Payment from './payments.model.js';
-import createError from '../../shared/utils/createError.js';
 import createResponse from '../../shared/utils/createResponse.js';
 import { OrderItem } from '../order_items/order_items.model.js';
 import { getIO } from '../../shared/utils/socket.js';
 
-
+// --- HÀM HELPER ---
 function sortObject(obj) {
     let sorted = {};
     let str = Object.keys(obj).map(key => encodeURIComponent(key)).sort();
@@ -22,217 +21,78 @@ function sortObject(obj) {
     return sorted;
 }
 
-// Hàm helper tính tổng tiền chỉ cho món 'served'
 const calculateServedAmount = async (orderIds) => {
     const items = await OrderItem.find({
         order_id: { $in: orderIds },
+        // Kiểm tra cả 2 loại trạng thái để tránh sót dữ liệu
         status: { $in: ['served', 'Đã phục vụ'] }
     });
     return items.reduce((sum, item) => sum + (Number(item.price) * Number(item.quantity)), 0);
 };
 
 // ==========================================
-// 1. TẠO LINK THANH TOÁN (Khách bấm từ Mobile)
+// 1. THANH TOÁN VNPAY (MOBILE)
 // ==========================================
-export const createPaymentUrl = async (req, res) => {
-    try {
-        const { table_id, bankCode } = req.body; // Bỏ amount từ body để BE tự tính cho chuẩn
+export const createPaymentUrl = handleAsync(async (req, res) => {
+    const { table_id, bankCode } = req.body;
 
-        const table = await Table.findOne({ table_number: table_id });
-        if (!table) return res.status(404).json({ message: "Không tìm thấy bàn" });
+    const table = await Table.findOne({ table_number: table_id });
+    if (!table) return res.status(404).json({ message: "Không tìm thấy bàn" });
 
-        const activeOrders = await Order.find({
-            table_id: table._id,
-            status: { $nin: ['completed', 'cancelled'] }
-        });
+    const activeOrders = await Order.find({
+        table_id: table._id,
+        status: { $nin: ['completed', 'cancelled', 'canceled'] }
+    });
 
-        if (!activeOrders.length) return res.status(400).json({ message: "Bàn trống" });
+    if (!activeOrders.length) return res.status(400).json({ message: "Bàn trống hoặc không có đơn hàng cần thanh toán" });
 
-        const orderIds = activeOrders.map(o => o._id);
+    const orderIds = activeOrders.map(o => o._id);
+    const amount = await calculateServedAmount(orderIds);
 
-        // --- LOGIC MỚI: TỰ TÍNH TIỀN DỰA TRÊN MÓN ĐÃ PHỤ VỤ ---
-        const amount = await calculateServedAmount(orderIds);
-
-        if (amount <= 0) {
-            return res.status(400).json({ message: "Chưa có món nào được phục vụ để thanh toán" });
-        }
-
-        const invoice = await Invoice.create({
-            invoice_number: `INV${moment().format('YYYYMMDDHHmmss')}`,
-            table_id: table._id,
-            order_ids: orderIds,
-            total_amount: amount,
-            status: 'unpaid',
-            payment_method: 'vnpay'
-        });
-
-        // Cấu hình VNPay (Giữ nguyên phần hash cũ của Khanh)
-        let date = new Date();
-        let createDate = moment(date).format('YYYYMMDDHHmmss');
-        let ipAddr = req.headers['x-forwarded-for'] || req.socket.remoteAddress || "127.0.0.1";
-
-        let vnp_Params = {
-            'vnp_Version': '2.1.0',
-            'vnp_Command': 'pay',
-            'vnp_TmnCode': vnpayConfig.vnp_TmnCode,
-            'vnp_Locale': 'vn',
-            'vnp_CurrCode': 'VND',
-            'vnp_TxnRef': invoice._id.toString(),
-            'vnp_OrderInfo': `Thanh toan Roosta - Ban ${table.table_number}`,
-            'vnp_OrderType': 'other',
-            'vnp_Amount': amount * 100, // Tiền đã tính lại
-            'vnp_ReturnUrl': vnpayConfig.vnp_ReturnUrl,
-            'vnp_IpAddr': ipAddr,
-            'vnp_CreateDate': createDate
-        };
-
-        if (bankCode) vnp_Params['vnp_BankCode'] = bankCode;
-        vnp_Params = sortObject(vnp_Params);
-        let signData = qs.stringify(vnp_Params, { encode: false });
-        let hmac = crypto.createHmac("sha512", vnpayConfig.vnp_HashSecret);
-        let signed = hmac.update(Buffer.from(signData, 'utf-8')).digest("hex");
-        vnp_Params['vnp_SecureHash'] = signed;
-
-        const finalUrl = vnpayConfig.vnp_Url + '?' + qs.stringify(vnp_Params, { encode: false });
-        return res.status(200).json({ paymentUrl: finalUrl, amount });
-    } catch (error) {
-        return res.status(500).json({ message: "Lỗi hệ thống", detail: error.message });
+    if (amount <= 0) {
+        return res.status(400).json({ message: "Chưa có món nào được phục vụ (served) để tính tiền" });
     }
-};
-// ==========================================
-// 2. XỬ LÝ KẾT QUẢ (Dọn bàn & Lưu lịch sử)
-// ==========================================
-export const vnpayReturn = async (req, res) => {
-    try {
-        let vnp_Params = req.query;
-        const secureHash = vnp_Params['vnp_SecureHash'];
-        const responseCode = vnp_Params['vnp_ResponseCode'];
-        const invoiceId = vnp_Params['vnp_TxnRef'];
 
-        delete vnp_Params['vnp_SecureHash'];
-        delete vnp_Params['vnp_SecureHashType'];
+    const invoice = await Invoice.create({
+        invoice_number: `INV${moment().format('YYYYMMDDHHmmss')}`,
+        table_id: table._id,
+        order_ids: orderIds,
+        total_amount: amount,
+        status: 'unpaid',
+        payment_method: 'vnpay'
+    });
 
-        // Sắp xếp và tạo chữ ký kiểm tra
-        vnp_Params = sortObject(vnp_Params);
-        const signData = qs.stringify(vnp_Params, { encode: false });
-        const hmac = crypto.createHmac("sha512", vnpayConfig.vnp_HashSecret);
-        const signed = hmac.update(Buffer.from(signData, 'utf-8')).digest("hex");
+    let vnp_Params = {
+        'vnp_Version': '2.1.0',
+        'vnp_Command': 'pay',
+        'vnp_TmnCode': vnpayConfig.vnp_TmnCode,
+        'vnp_Locale': 'vn',
+        'vnp_CurrCode': 'VND',
+        'vnp_TxnRef': invoice._id.toString(),
+        'vnp_OrderInfo': `Thanh toan Roosta - Ban ${table.table_number}`,
+        'vnp_OrderType': 'other',
+        'vnp_Amount': amount * 100,
+        'vnp_ReturnUrl': vnpayConfig.vnp_ReturnUrl,
+        'vnp_IpAddr': req.headers['x-forwarded-for'] || req.socket.remoteAddress || "127.0.0.1",
+        'vnp_CreateDate': moment().format('YYYYMMDDHHmmss')
+    };
 
-        // 1. KIỂM TRA CHỮ KÝ BẢO MẬT
-        if (secureHash !== signed) {
-            console.error("❌ Sai chữ ký bảo mật từ VNPay!");
-            return res.status(400).send("Sai chữ ký bảo mật");
-        }
-
-        // 2. KIỂM TRA MÃ PHẢN HỒI (00 = Thành công)
-        if (responseCode === '00') {
-            console.log(`✅ Thanh toán thành công hóa đơn: ${invoiceId}`);
-
-            // Tìm Invoice để lấy thông tin table_id và order_ids
-            const invoice = await Invoice.findById(invoiceId);
-
-            if (!invoice) {
-                console.error("❌ Không tìm thấy Invoice trong DB!");
-                return res.redirect(`http://localhost:5173/payment-failed?reason=invoice_not_found`);
-            }
-
-            // Nếu hóa đơn đã được thanh toán rồi (do IPN xử lý trước) thì chỉ việc redirect
-            if (invoice.status === 'paid') {
-                console.log("ℹ️ Hóa đơn đã được xử lý từ trước (IPN).");
-                return res.redirect(`http://localhost:5173/payment-result?vnp_ResponseCode=00&invoice=${invoiceId}`);
-            }
-
-            // --- BẮT ĐẦU CẬP NHẬT DATABASE ---
-
-            // A. Cập nhật Invoice
-            invoice.status = 'paid';
-            await invoice.save();
-
-            // B. Tạo bản ghi Payment để lưu lịch sử (Dùng Payment model)
-            await Payment.create({
-                invoice_id: invoiceId,
-                method: 'vnpay',
-                amount_paid: Number(vnp_Params['vnp_Amount']) / 100,
-                transaction_id: vnp_Params['vnp_TransactionNo'],
-                status: 'success',
-                note: 'Khách tự thanh toán qua VNPay'
-            });
-
-            // C. Đóng tất cả Order lẻ (Chuyển sang completed)
-            const orderUpdate = await Order.updateMany(
-                { _id: { $in: invoice.order_ids } },
-                { $set: { status: 'completed' } }
-            );
-            console.log(`✅ Đã đóng ${orderUpdate.modifiedCount} đơn hàng.`);
-
-            // D. Giải phóng bàn (Từ occupied sang available)
-            await Table.findByIdAndUpdate(invoice.table_id, {
-                status: 'available'
-            });
-            console.log(`✅ Đã giải phóng bàn ID: ${invoice.table_id}`);
-
-            // Chuyển hướng về trang thành công kèm thông tin
-            return res.redirect(`http://localhost:5173/payment-result?vnp_ResponseCode=00&vnp_TransactionNo=${vnp_Params['vnp_TransactionNo']}&vnp_Amount=${vnp_Params['vnp_Amount']}`);
-        } else {
-            // Thanh toán thất bại hoặc khách hủy
-            console.warn(`⚠️ Giao dịch thất bại với mã: ${responseCode}`);
-            return res.redirect(`http://localhost:5173/payment-result?vnp_ResponseCode=${responseCode}`);
-        }
-
-    } catch (error) {
-        console.error("❌ LỖI CRASH VNPAY_RETURN:", error);
-        return res.status(500).send("Lỗi hệ thống khi xử lý kết quả thanh toán");
-    }
-};
-
-export const vnpayIPN = handleAsync(async (req, res) => {
-    let vnp_Params = req.query;
-    const secureHash = vnp_Params['vnp_SecureHash'];
-    const responseCode = vnp_Params['vnp_ResponseCode'];
-    const invoiceId = vnp_Params['vnp_TxnRef'];
-
-    delete vnp_Params['vnp_SecureHash'];
-    delete vnp_Params['vnp_SecureHashType'];
-
+    if (bankCode) vnp_Params['vnp_BankCode'] = bankCode;
     vnp_Params = sortObject(vnp_Params);
-    const signData = qs.stringify(vnp_Params, { encode: false });
-    const hmac = crypto.createHmac("sha512", vnpayConfig.vnp_HashSecret);
-    const signed = hmac.update(Buffer.from(signData, 'utf-8')).digest("hex");
+    let signData = qs.stringify(vnp_Params, { encode: false });
+    let hmac = crypto.createHmac("sha512", vnpayConfig.vnp_HashSecret);
+    let signed = hmac.update(Buffer.from(signData, 'utf-8')).digest("hex");
+    vnp_Params['vnp_SecureHash'] = signed;
 
-    if (secureHash === signed) {
-        // 1. Kiểm tra hóa đơn trong DB
-        const invoice = await Invoice.findById(invoiceId);
-        if (!invoice) return res.status(200).json({ RspCode: '01', Message: 'Order not found' });
-
-        // 2. Nếu đã thanh toán rồi thì không xử lý lại (tránh trùng lặp)
-        if (invoice.status === 'paid') return res.status(200).json({ RspCode: '02', Message: 'Order already confirmed' });
-
-        if (responseCode === '00') {
-            // THANH TOÁN THÀNH CÔNG: Thực hiện bộ 3 dọn dẹp
-            invoice.status = 'paid';
-            await invoice.save();
-
-            // Tạo bản ghi Payment
-            await Payment.create({
-                invoice_id: invoiceId,
-                method: 'vnpay',
-                amount_paid: vnp_Params['vnp_Amount'] / 100,
-                transaction_id: vnp_Params['vnp_TransactionNo'],
-                status: 'success'
-            });
-
-            // Chuyển Order sang completed & Mở bàn
-            await Order.updateMany({ _id: { $in: invoice.order_ids } }, { $set: { status: 'completed' } });
-            await Table.findByIdAndUpdate(invoice.table_id, { status: 'available' });
-
-            return res.status(200).json({ RspCode: '00', Message: 'Success' });
-        } else {
-            return res.status(200).json({ RspCode: '00', Message: 'Payment failed' });
-        }
-    }
-    res.status(200).json({ RspCode: '97', Message: 'Checksum failed' });
+    return res.status(200).json({ 
+        paymentUrl: vnpayConfig.vnp_Url + '?' + qs.stringify(vnp_Params, { encode: false }), 
+        amount 
+    });
 });
 
+// ==========================================
+// 2. THANH TOÁN TẠI QUẦY (OFFLINE - POS)
+// ==========================================
 export const processCounterPayment = handleAsync(async (req, res) => {
     const { table_id, method, note, split_count } = req.body;
 
@@ -241,18 +101,15 @@ export const processCounterPayment = handleAsync(async (req, res) => {
 
     const activeOrders = await Order.find({
         table_id: table._id,
-        status: { $nin: ['completed', 'cancelled'] }
+        status: { $nin: ['completed', 'cancelled', 'canceled'] }
     });
 
-    if (!activeOrders.length) return res.status(404).json({ message: "Bàn không có đơn hàng" });
-
+    if (!activeOrders.length) return res.status(404).json({ message: "Bàn không có đơn hàng hoạt động" });
     const orderIds = activeOrders.map(o => o._id);
 
-    // --- LOGIC MỚI: CHỈ TÍNH TIỀN MÓN ĐÃ PHỤ VỤ ---
     const finalAmount = await calculateServedAmount(orderIds);
-
     if (finalAmount <= 0) {
-        return res.status(400).json({ message: "Bàn này chưa có món nào hoàn thành phục vụ" });
+        return res.status(400).json({ message: "Chưa có món nào được phục vụ để thanh toán" });
     }
 
     const invoice = await Invoice.create({
@@ -271,72 +128,58 @@ export const processCounterPayment = handleAsync(async (req, res) => {
         amount_paid: finalAmount,
         status: 'success',
         transaction_id: `OFFLINE-${Date.now()}`,
-        note: note || `Thanh toán món đã phục vụ tại quầy`
+        note: note || `Thanh toán tại quầy`
     });
 
-    // Cập nhật các Order: 
-    // Lưu ý: Nếu có món chưa phục vụ, bạn có thể cân nhắc giữ lại Order hoặc đóng tất cả tùy nghiệp vụ.
-    // Ở đây mình đóng tất cả theo luồng cũ của bạn để giải phóng bàn.
+    // Đồng bộ: Đóng Order và Giải phóng bàn
     await Order.updateMany({ _id: { $in: orderIds } }, { $set: { status: 'completed' } });
     await Table.findByIdAndUpdate(table._id, { status: 'available' });
 
     return createResponse(res, 201, "Thanh toán thành công!", invoice);
 });
 
-
+// ==========================================
+// 3. THANH TOÁN SEPAY (WEBHOOK)
+// ==========================================
 export const handleSepayWebhook = async (req, res) => {
     try {
         const { transferAmount, content, transferType } = req.body;
         if (transferType !== 'in') return res.status(200).send("OK");
 
-        // 1. Trích xuất mã đơn từ nội dung chuyển khoản
         const match = content.match(/ROOSTA([A-Z0-9]+)/i);
         if (!match) return res.status(200).send("OK");
         const orderShortCode = match[1].toLowerCase();
 
-        // 2. Tìm đơn hàng để xác định bàn (table_id)
         const leadOrder = await Order.findOne({
             $expr: { $eq: [{ $toLower: { $substr: [{ $toString: "$_id" }, 18, 6] } }, orderShortCode] }
         });
 
-        if (!leadOrder) {
-            console.error("Không tìm thấy đơn hàng với mã:", orderShortCode);
-            return res.status(200).send("OK");
-        }
+        if (!leadOrder) return res.status(200).send("OK");
 
-        // 3. Tìm thông tin Bàn (Để lấy table_number phục vụ Socket)
         const table = await Table.findById(leadOrder.table_id);
         if (!table) return res.status(200).send("OK");
 
-        // 4. Tìm TẤT CẢ đơn hàng đang hoạt động của bàn này (ĐỒNG BỘ VỚI POS)
         const activeOrders = await Order.find({
             table_id: table._id,
-            status: { $nin: ['completed', 'cancelled'] }
+            status: { $nin: ['completed', 'cancelled', 'canceled'] }
         });
 
-        if (activeOrders.length === 0) return res.status(200).send("OK");
+        if (!activeOrders.length) return res.status(200).send("OK");
         const orderIds = activeOrders.map(o => o._id);
 
-        // 5. Tính toán số tiền (ĐỒNG BỘ VỚI POS)
-        let finalAmount = 0;
-        try {
-            // Đảm bảo bạn đã import hàm này ở đầu file
-            finalAmount = await calculateServedAmount(orderIds);
-        } catch (e) {
-            finalAmount = Number(transferAmount);
-        }
+        let finalAmount = await calculateServedAmount(orderIds);
+        // Fallback nếu không có món nào served nhưng đã có tiền vào
+        const billingAmount = finalAmount > 0 ? finalAmount : Number(transferAmount);
 
-        // 6. LƯU HÓA ĐƠN (Invoice) - Bước này quan trọng để truy vấn sau này
         const invoice = await Invoice.create({
             invoice_number: `INV-SEPAY-${Date.now()}`,
             table_id: table._id,
             order_ids: orderIds,
-            total_amount: finalAmount > 0 ? finalAmount : Number(transferAmount),
+            total_amount: billingAmount,
             status: 'paid',
             payment_method: 'sepay'
         });
 
-        // 7. LƯU CHI TIẾT THANH TOÁN (Payment)
         await Payment.create({
             invoice_id: invoice._id,
             method: 'sepay',
@@ -346,19 +189,11 @@ export const handleSepayWebhook = async (req, res) => {
             note: content
         });
 
-        // 8. CẬP NHẬT TRẠNG THÁI ĐƠN HÀNG (ĐỂ ẨN MÓN)
-        // Cập nhật toàn bộ đơn hàng của bàn đó thành completed
-        await Order.updateMany(
-            { _id: { $in: orderIds } },
-            { $set: { status: 'completed' } }
-        );
-
-        // Giải phóng bàn
+        // QUÉT SẠCH TRẠNG THÁI ĐỂ ẨN MÓN
+        await Order.updateMany({ _id: { $in: orderIds } }, { $set: { status: 'completed' } });
         await Table.findByIdAndUpdate(table._id, { status: 'available' });
 
-        console.log(`[Success] Đã lưu hóa đơn và đóng đơn hàng cho bàn ${table.table_number}`);
-
-        // 9. BẮN SOCKET (Gửi số bàn để FE ẩn món)
+        // GỬI SOCKET REALTIME
         const io = getIO();
         if (io) {
             io.emit('payment_success', { 
@@ -369,7 +204,8 @@ export const handleSepayWebhook = async (req, res) => {
 
         return res.status(200).send("OK");
     } catch (error) {
-        console.error("Lỗi Webhook:", error);
+        console.error("Lỗi Webhook SePay:", error);
         return res.status(200).send("Error");
     }
 };
+
