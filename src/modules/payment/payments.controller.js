@@ -284,47 +284,67 @@ export const processCounterPayment = handleAsync(async (req, res) => {
 });
 
 
-
 export const handleSepayWebhook = async (req, res) => {
     try {
-        console.log("1. Đã nhận Request từ SePay");
-        const { transferAmount, content } = req.body;
+        const { transferAmount, content, transferType } = req.body;
+        if (transferType !== 'in') return res.status(200).send("OK");
 
+        // 1. Trích mã đơn (Ví dụ: 6675EB)
         const match = content.match(/ROOSTA([A-Z0-9]+)/i);
-        if (!match) return res.status(200).send("No match");
+        if (!match) return res.status(200).send("OK");
+        const orderShortCode = match[1].toLowerCase();
 
-        const code = match[1].toLowerCase();
-        console.log("2. Mã đơn trích được:", code);
-
-        const order = await Order.findOne({
-            $expr: { $eq: [{ $toLower: { $substr: [{ $toString: "$_id" }, 18, 6] } }, code] }
+        // 2. Tìm đơn hàng để lấy thông tin bàn (Giống logic hàm tại quầy của bạn)
+        const leadOrder = await Order.findOne({
+            $expr: { $eq: [{ $toLower: { $substr: [{ $toString: "$_id" }, 18, 6] } }, orderShortCode] }
         }).populate('table_id');
 
-        if (!order) {
-            console.log("3. ❌ Không tìm thấy Order khớp mã trong DB");
-            return res.status(200).send("No order");
-        }
+        if (!leadOrder || !leadOrder.table_id) return res.status(200).send("OK");
 
-        console.log("4. ✅ Tìm thấy đơn, bắt đầu update DB...");
+        const table = leadOrder.table_id; // Đây là Object bàn đã populate
+        const orderIds = await Order.find({
+            table_id: table._id,
+            status: { $nin: ['completed', 'cancelled'] }
+        }).distinct('_id');
 
-        // Cập nhật trạng thái
-        await Order.findByIdAndUpdate(order._id, { status: 'completed' });
-        if (order.table_id) {
-            await Table.findByIdAndUpdate(order.table_id._id, { status: 'available' });
-        }
+        if (!orderIds.length) return res.status(200).send("OK");
 
-        console.log("5. ✅ Update DB xong, chuẩn bị bắn Socket");
+        // 3. TÍNH TIỀN MÓN ĐÃ PHỤ VỤ (Dùng đúng hàm bạn đang dùng ở quầy)
+        // Lưu ý: Đảm bảo bạn đã import hàm calculateServedAmount vào file này nhé!
+        const finalAmount = await calculateServedAmount(orderIds);
 
+        // 4. TẠO INVOICE & PAYMENT (Khớp hoàn toàn với POS)
+        const invoice = await Invoice.create({
+            invoice_number: `INV-SEPAY-${Date.now()}`,
+            table_id: table._id,
+            order_ids: orderIds,
+            total_amount: finalAmount > 0 ? finalAmount : Number(transferAmount),
+            status: 'paid',
+            payment_method: 'sepay'
+        });
+
+        await Payment.create({
+            invoice_id: invoice._id,
+            method: 'sepay',
+            amount_paid: Number(transferAmount),
+            status: 'success',
+            transaction_id: `SEPAY-${Date.now()}`,
+            note: `Thanh toán tự động qua VietQR nội dung ${content}`
+        });
+
+        // 5. CẬP NHẬT TRẠNG THÁI (Giống hệt hàm tại quầy)
+        await Order.updateMany({ _id: { $in: orderIds } }, { $set: { status: 'completed' } });
+        await Table.findByIdAndUpdate(table._id, { status: 'available' });
+
+        // 6. BẮN SOCKET (Dùng table_number để FE nhận diện)
         const io = getIO();
         if (io) {
-            const tableNum = order.table_id?.table_number || "1";
-            io.emit('payment_success', { tableId: String(tableNum) });
-            console.log("6. 🚀 Đã phát tín hiệu Socket thành công!");
+            io.emit('payment_success', { tableId: String(table.table_number) });
         }
 
         return res.status(200).send("OK");
-    } catch (err) {
-        console.error("🔥 LỖI TẠI DÒNG NÀO ĐÓ:", err.message);
-        return res.status(200).send("Error");
+    } catch (error) {
+        console.error("Lỗi Webhook SePay:", error);
+        return res.status(200).send("Error"); // Vẫn trả 200 để SePay khỏi gửi lại
     }
 };
