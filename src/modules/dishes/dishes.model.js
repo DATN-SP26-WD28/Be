@@ -12,13 +12,15 @@ const dishSchema = new mongoose.Schema(
     price: {
       type: Number,
       required: true,
-      min: [0, 'Giá tiền không thể nhỏ hơn 0']
-    }, status: {
+      min: [0, "Giá tiền không thể nhỏ hơn 0"],
+    },
+    status: {
       type: String,
-      enum: ['available', 'out_of_stock'],
-      default: 'available',
+      enum: ["available", "out_of_stock"],
+      default: "available",
     },
     image_url: { type: String, maxLength: 255 },
+    deleted_at: { type: Date, default: null },
   },
   { timestamps: true },
 );
