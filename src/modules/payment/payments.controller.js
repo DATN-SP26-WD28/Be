@@ -144,7 +144,7 @@ export const processCounterPayment = handleAsync(async (req, res) => {
 export const handleSepayWebhook = async (req, res) => {
     try {
         const { transferAmount, content, transferType } = req.body;
-        
+
         // 1. Bỏ qua nếu không phải giao dịch nhận tiền
         if (transferType !== 'in') return res.status(200).send("OK");
 
@@ -159,11 +159,11 @@ export const handleSepayWebhook = async (req, res) => {
         });
         if (!leadOrder) return res.status(200).send("OK");
 
-        // 4. Tìm Bàn (Giống cách processCounterPayment dùng Table.findOne)
+        // 4. Tìm Bàn
         const table = await Table.findById(leadOrder.table_id);
         if (!table) return res.status(200).send("OK");
 
-        // 5. Lấy danh sách các đơn hàng hoạt động (Giống hệt processCounterPayment)
+        // 5. Lấy danh sách các đơn hàng hoạt động
         const activeOrders = await Order.find({
             table_id: table._id,
             status: { $nin: ['completed', 'cancelled', 'canceled'] }
@@ -172,60 +172,79 @@ export const handleSepayWebhook = async (req, res) => {
         if (!activeOrders.length) return res.status(200).send("OK");
         const orderIds = activeOrders.map(o => o._id);
 
-        // 6. Tính tiền dựa trên món đã phục vụ (Giống hệt processCounterPayment)
+        // 6. Tính tiền dựa trên món đã phục vụ
         let finalAmount = await calculateServedAmount(orderIds);
-        
-        // Lưu ý: Khác với tại quầy (trả lỗi 400 nếu finalAmount <= 0), 
-        // Webhook đã nhận tiền rồi nên ta phải dùng số tiền chuyển khoản để chốt đơn.
         const billingAmount = finalAmount > 0 ? finalAmount : Number(transferAmount);
 
-        // 7. Tạo Invoice (Giống hệt processCounterPayment)
-        const invoice = await Invoice.create({
-            invoice_number: `INV-SEPAY-${Date.now()}`,
-            table_id: table._id,
-            order_ids: orderIds,
-            total_amount: billingAmount,
-            status: 'paid',
-            payment_method: 'sepay', // Đảm bảo 'sepay' đã có trong enum của model Invoice
-            split_count: 1
-        });
+        // =============================================================
+        // TỪ BƯỚC NÀY TRỞ ĐI: BỌC TRY-CATCH TỪNG PHẦN ĐỂ CHỐNG "CHẾT CHÙM"
+        // =============================================================
 
-        // 8. Tạo Payment (Giống hệt processCounterPayment)
-        await Payment.create({
-            invoice_id: invoice._id,
-            method: 'sepay',
-            amount_paid: Number(transferAmount),
-            status: 'success',
-            transaction_id: `SEPAY-${Date.now()}`,
-            note: content
-        });
+        // 7 & 8. Tạo Invoice và Payment
+        try {
+            const invoice = await Invoice.create({
+                invoice_number: `INV-SEPAY-${Date.now()}`,
+                table_id: table._id,
+                order_ids: orderIds,
+                total_amount: billingAmount,
+                status: 'paid',
+                payment_method: 'sepay',
+                split_count: 1
+            });
 
-        // -------------------------------------------------------------
-        // 9. LOGIC ĐƠN, MÓN VÀ GIẢI PHÓNG BÀN (Dựa sát theo hàm của bạn)
-        // -------------------------------------------------------------
-        
-        // A. Cập nhật các Order (Giống hệt processCounterPayment)
-        await Order.updateMany({ _id: { $in: orderIds } }, { $set: { status: 'completed' } });
-        
-        // B. Cập nhật Món (Đảm bảo FE không còn hiển thị món pending)
-        await OrderItem.updateMany(
-            { order_id: { $in: orderIds }, status: { $ne: 'canceled' } }, 
-            { $set: { status: 'served' } }
-        );
-
-        // C. Giải phóng bàn (Giống hệt processCounterPayment)
-        await Table.findByIdAndUpdate(table._id, { status: 'available' });
-
-        // D. Bắn Socket cho Frontend
-        const io = getIO();
-        if (io) {
-            io.emit('payment_success', { tableId: String(table.table_number) });
+            await Payment.create({
+                invoice_id: invoice._id,
+                method: 'sepay',
+                amount_paid: Number(transferAmount),
+                status: 'success',
+                transaction_id: `SEPAY-${Date.now()}`,
+                note: content
+            });
+            console.log(`✅ [Webhook] Đã lưu Hóa đơn & Thanh toán cho bàn ${table.table_number}`);
+        } catch (err) {
+            console.error("❌ [Lỗi DB] Không thể lưu Invoice/Payment:", err.message);
         }
 
+        // 9. LOGIC ĐƠN, MÓN VÀ GIẢI PHÓNG BÀN
+
+        // A & B. Cập nhật Order và OrderItem
+        try {
+            await Order.updateMany({ _id: { $in: orderIds } }, { $set: { status: 'completed' } });
+
+            await OrderItem.updateMany(
+                { order_id: { $in: orderIds }, status: { $ne: 'canceled' } },
+                { $set: { status: 'served' } }
+            );
+            console.log(`✅ [Webhook] Đã chốt đơn và ẩn món thành công cho bàn ${table.table_number}`);
+        } catch (err) {
+            console.error("❌ [Lỗi DB] Không thể chốt Order/OrderItem:", err.message);
+        }
+
+        // C. Giải phóng bàn
+        try {
+            await Table.findByIdAndUpdate(table._id, { status: 'available' });
+            console.log(`✅ [Webhook] Đã giải phóng bàn ${table.table_number}`);
+        } catch (err) {
+            console.error("❌ [Lỗi DB] Không thể giải phóng bàn:", err.message);
+        }
+
+        // D. Bắn Socket cho Frontend
+        try {
+            const io = getIO();
+            if (io) {
+                io.emit('payment_success', { tableId: String(table.table_number) });
+                console.log(`✅ [Webhook] Đã bắn Socket "payment_success" thành công!`);
+            }
+        } catch (err) {
+            console.error("❌ [Lỗi Socket] Không thể bắn tín hiệu:", err.message);
+        }
+
+        // LUÔN TRẢ VỀ 200 ĐỂ SEPAY BIẾT LÀ ĐÃ NHẬN, KHÔNG GỌI LẠI NỮA
         return res.status(200).send("OK");
 
     } catch (error) {
-        console.error("Lỗi Webhook:", error);
-        return res.status(200).send("Error");
+        console.error("🔥 LỖI TỔNG NGHIÊM TRỌNG WEBHOOK:", error);
+        // Ngay cả khi sập nguồn logic đầu tiên, vẫn báo OK để SePay không spam
+        return res.status(200).send("OK");
     }
 };
