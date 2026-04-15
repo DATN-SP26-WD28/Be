@@ -132,6 +132,9 @@ export const createOrderByStaff = handleAsync(async (req, res) => {
   }));
   await OrderItem.insertMany(orderItemsData);
 
+  // 5. Cập nhật trạng thái bàn thành occupied
+  await Table.findByIdAndUpdate(table_id, { status: 'occupied' });
+
   const io = getIO();
   if (io) {
     const tableId = newOrder?.table_id?.toString();
@@ -175,7 +178,7 @@ export const getAllOrders = handleAsync(async (req, res) => {
   })
     .populate('table_id', 'table_number location')
     .populate('guest_id', 'username')
-    .sort({ createdAt: 1 });
+    .sort({ createdAt: -1 });
 
   if (!orders || orders.length === 0) {
     return createResponse(res, 200, 'Hiện không có đơn hàng nào cần xử lý', []);

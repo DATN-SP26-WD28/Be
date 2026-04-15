@@ -6,4 +6,4 @@ dotenv.config({
   // override: true,
 });
 
-export const { HOST, PORT, DB_URI, JWT_SECRET, JWT_EXPIRES_IN, EMAIL_USER ,EMAIL_PASSWORD} = process.env;
+export const { HOST, PORT, DB_URI, JWT_SECRET, JWT_EXPIRES_IN, EMAIL_USER, EMAIL_PASSWORD, JWT_REFRESH_SECRET } = process.env;
