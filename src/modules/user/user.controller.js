@@ -33,16 +33,12 @@ export const getMyOrders = handleAsync(async (req, res) => {
     createResponse(res, 200, "Lấy lịch sử đơn hàng thành công", orders);
 });
 
-// 4. Admin lấy tất cả nhân viên (rol khác customer)
-export const getStaff = handleAsync(async (req, res) => {
-    const staff = await User.find({ role: { $ne: 'customer' } }).sort({ created_at: -1 });
-    createResponse(res, 200, "Lấy danh sách nhân viên thành công", staff);
-});
+
 
 // 4.1. Admin lấy tất cả khách hàng (role = customer)
 export const getCustomers = handleAsync(async (req, res) => {
     const customers = await User.find({ role: 'customer' }).sort({ created_at: -1 });
-    createResponse(res, 200, "Lấy danh sách khách hàng thành công", customers);
+    createResponse(res, 200, "Lấy danh sách thành công", customers);
 });
 
 // 4.2. Admin lấy tất cả người dùng (deprecated - dùng getStaff hoặc getCustomers)

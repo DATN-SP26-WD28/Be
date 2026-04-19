@@ -6,10 +6,9 @@ import { protect } from '../../shared/middlewares/auth.middleware.js';
 const userRouter = express.Router();
 
 // --- PUBLIC CRUD ROUTES ---
-// Lấy danh sách nhân viên (roles: waiter, cashier, chef, admin) - dành cho Staff Management page
-userRouter.get("/staff", getStaff);
 
-// Lấy danh sách khách hàng (role: customer) - dành cho Customer Management page
+
+// Lấy danh sách nhaan vien (role: customer) - dành cho Customer Management page
 userRouter.get("/customers", getCustomers);
 
 // Lấy tất cả người dùng (deprecated)
