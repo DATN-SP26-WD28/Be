@@ -1,5 +1,5 @@
 import express from 'express';
-import { getAllUsers, getMe, getMyOrders, toggleUserStatus, updateMe, createUser, updateUser, deleteUser, getStaff, getCustomers } from './user.controller.js';
+import { getAllUsers, getMe, getMyOrders, toggleUserStatus, updateMe, createUser, updateUser, deleteUser, getCustomers } from './user.controller.js';
 import { protect } from '../../shared/middlewares/auth.middleware.js';
 
 
