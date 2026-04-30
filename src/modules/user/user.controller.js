@@ -112,7 +112,8 @@ export const createUser = handleAsync(async (req, res) => {
 // 7. Admin cập nhật thông tin người dùng
 export const updateUser = handleAsync(async (req, res) => {
     const { id } = req.params;
-    const { name, email, phone, password } = req.body;
+    // Tách riêng oldPassword và newPassword
+    const { name, email, phone, oldPassword, newPassword } = req.body;
 
     const user = await User.findById(id);
     if (!user) {
@@ -145,15 +146,32 @@ export const updateUser = handleAsync(async (req, res) => {
         }
     }
 
-    // Cập nhật các trường được cung cấp (KHÔNG cập nhật role)
+    // --- LOGIC ĐỔI MẬT KHẨU MỚI ---
+    if (newPassword) {
+        // Yêu cầu phải có mật khẩu cũ
+        if (!oldPassword) {
+            return createResponse(res, 400, "Vui lòng nhập mật khẩu hiện tại");
+        }
+
+        // Kiểm tra mật khẩu cũ có khớp với DB không
+        const isMatch = await bcrypt.compare(oldPassword, user.password);
+        if (!isMatch) {
+            return createResponse(res, 400, "Mật khẩu hiện tại không chính xác");
+        }
+
+        // Băm và lưu mật khẩu mới
+        user.password = await bcrypt.hash(newPassword, 10);
+    }
+
+    // Cập nhật các trường thông tin cơ bản
     if (name) user.username = name;
     if (email) user.email = email;
     if (phone) user.phone = phone;
-    if (password) {
-        user.password = await bcrypt.hash(password, 10);
-    }
 
     const updatedUser = await user.save();
+
+    // Ẩn password trước khi trả data về cho Frontend
+    updatedUser.password = undefined;
 
     createResponse(res, 200, "Cập nhật người dùng thành công", updatedUser);
 });
