@@ -159,8 +159,9 @@ export const updateUser = handleAsync(async (req, res) => {
             return createResponse(res, 400, "Mật khẩu hiện tại không chính xác");
         }
 
-        // Băm và lưu mật khẩu mới
-        user.password = await bcrypt.hash(newPassword, 10);
+        // ĐÃ SỬA LỖI DOUBLE HASHING: Chỉ gán mật khẩu gốc (plain text)
+        // Hàm pre('save') trong model User sẽ tự động băm mật khẩu này trước khi lưu vào DB
+        user.password = newPassword;
     }
 
     // Cập nhật các trường thông tin cơ bản
@@ -168,9 +169,10 @@ export const updateUser = handleAsync(async (req, res) => {
     if (email) user.email = email;
     if (phone) user.phone = phone;
 
+    // Lưu thông tin vào Database (Nếu có đổi pass, Model sẽ băm tại bước này)
     const updatedUser = await user.save();
 
-    // Ẩn password trước khi trả data về cho Frontend
+    // Ẩn password trước khi trả data về cho Frontend để bảo mật
     updatedUser.password = undefined;
 
     createResponse(res, 200, "Cập nhật người dùng thành công", updatedUser);
