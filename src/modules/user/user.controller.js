@@ -112,47 +112,71 @@ export const createUser = handleAsync(async (req, res) => {
 // 7. Admin cập nhật thông tin người dùng
 export const updateUser = handleAsync(async (req, res) => {
     const { id } = req.params;
+    // Đón các trường dữ liệu từ Frontend gửi lên
     const { name, email, phone, oldPassword, newPassword } = req.body;
 
-    // 1. Ép Mongoose lấy cả trường password
+    // 1. Ép Mongoose lấy kèm trường password (để khắc phục lỗi undefined)
     const user = await User.findById(id).select('+password');
-
+    
     if (!user) {
         return createResponse(res, 404, "Không tìm thấy người dùng");
     }
 
-    // --- LOGIC ĐỔI MẬT KHẨU MỚI ---
+    // 2. Validate thông tin cơ bản
+    if (name && !/^[a-zA-Z\s]+$/.test(name)) {
+        return createResponse(res, 400, "Tên người dùng không hợp lệ (chỉ chứa chữ)");
+    }
+
+    if (phone && !/^[0-9]{10,11}$/.test(phone)) {
+        return createResponse(res, 400, "Số điện thoại không hợp lệ (chỉ chứa 10-11 chữ số)");
+    }
+
+    if (email && email !== user.email) {
+        const existingUser = await User.findOne({ email });
+        if (existingUser) {
+            return createResponse(res, 409, "Email đã tồn tại");
+        }
+    }
+
+    if (name && name !== user.username) {
+        const existingUsername = await User.findOne({ username: name });
+        if (existingUsername) {
+            return createResponse(res, 409, "Tên đăng nhập đã tồn tại");
+        }
+    }
+
+    // 3. LOGIC ĐỔI MẬT KHẨU AN TOÀN
     if (newPassword) {
+        // Bắt buộc phải có mật khẩu hiện tại
         if (!oldPassword) {
             return createResponse(res, 400, "Vui lòng nhập mật khẩu hiện tại");
         }
 
-        // DEBUG: In ra màn hình Terminal của Backend xem user có pass không
-        console.log("=== KIỂM TRA MẬT KHẨU TRONG DB ===");
-        console.log("Mật khẩu trong DB là:", user.password);
-
-        // 2. Chặn lỗi undefined làm sập server
+        // Chặn lỗi nếu tài khoản chưa từng có mật khẩu
         if (!user.password) {
-            return createResponse(res, 400, "Tài khoản này đang bị lỗi (không có mật khẩu trong Database). Vui lòng dùng tài khoản khác!");
+            return createResponse(res, 400, "Tài khoản này chưa thiết lập mật khẩu trong hệ thống");
         }
 
-        // 3. So sánh mật khẩu
+        // So sánh mật khẩu cũ bạn nhập với mã băm trong Database
         const isMatch = await bcrypt.compare(oldPassword, user.password);
         if (!isMatch) {
             return createResponse(res, 400, "Mật khẩu hiện tại không chính xác");
         }
 
-        // Gán mật khẩu mới
-        user.password = newPassword;
+        // Băm (Mã hóa) mật khẩu mới trước khi lưu vào Database
+        user.password = await bcrypt.hash(newPassword, 10);
     }
 
-    // Cập nhật các trường thông tin cơ bản
+    // 4. Cập nhật các trường thông tin cơ bản
     if (name) user.username = name;
     if (email) user.email = email;
     if (phone) user.phone = phone;
 
+    // 5. Lưu xuống Database
     const updatedUser = await user.save();
-    updatedUser.password = undefined; // Ẩn pass để bảo mật
+
+    // 6. Xóa trường password khỏi kết quả trả về để bảo mật tuyệt đối
+    updatedUser.password = undefined;
 
     createResponse(res, 200, "Cập nhật người dùng thành công", updatedUser);
 });
