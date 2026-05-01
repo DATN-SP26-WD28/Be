@@ -73,8 +73,8 @@ export const createUser = handleAsync(async (req, res) => {
     }
 
     // Validate username (chỉ chứa chữ)
-    if (!/^[a-zA-Z\s]+$/.test(name)) {
-        return createResponse(res, 400, "Tên người dùng không hợp lệ (chỉ chứa chữ)");
+    if (name && !/^[\p{L}\s]+$/u.test(name)) {
+        return createResponse(res, 400, "Tên người dùng không hợp lệ (chỉ chứa chữ cái)");
     }
 
     // Validate phone (10-11 chữ số)
@@ -117,7 +117,7 @@ export const updateUser = handleAsync(async (req, res) => {
 
     // 1. Ép Mongoose lấy kèm trường password (để khắc phục lỗi undefined)
     const user = await User.findById(id).select('+password');
-    
+
     if (!user) {
         return createResponse(res, 404, "Không tìm thấy người dùng");
     }
