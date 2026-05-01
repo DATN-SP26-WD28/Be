@@ -34,8 +34,8 @@ const userSchema = new mongoose.Schema({
   role: {
     type: String,
     enum: {
-      values: ['customer'],
-      message: 'Vai trò người dùng phải là customer'
+      values: ['customer', 'admin'],
+      message: 'Vai trò người dùng không hợp lệ'
     },
     default: 'customer',
     immutable: true
@@ -53,7 +53,7 @@ const userSchema = new mongoose.Schema({
 });
 
 // Middleware to remove password from serialized output
-userSchema.methods.toJSON = function() {
+userSchema.methods.toJSON = function () {
   const obj = this.toObject();
   delete obj.password;
   return obj;

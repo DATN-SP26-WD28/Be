@@ -73,8 +73,8 @@ export const createUser = handleAsync(async (req, res) => {
     }
 
     // Validate username (chỉ chứa chữ)
-    if (!/^[a-zA-Z\s]+$/.test(name)) {
-        return createResponse(res, 400, "Tên người dùng không hợp lệ (chỉ chứa chữ)");
+    if (name && !/^[\p{L}\s]+$/u.test(name)) {
+        return createResponse(res, 400, "Tên người dùng không hợp lệ (chỉ chứa chữ cái)");
     }
 
     // Validate phone (10-11 chữ số)
@@ -112,24 +112,25 @@ export const createUser = handleAsync(async (req, res) => {
 // 7. Admin cập nhật thông tin người dùng
 export const updateUser = handleAsync(async (req, res) => {
     const { id } = req.params;
-    const { name, email, phone, password } = req.body;
+    // Đón các trường dữ liệu từ Frontend gửi lên
+    const { name, email, phone, oldPassword, newPassword } = req.body;
 
-    const user = await User.findById(id);
+    // 1. Ép Mongoose lấy kèm trường password (để khắc phục lỗi undefined)
+    const user = await User.findById(id).select('+password');
+
     if (!user) {
         return createResponse(res, 404, "Không tìm thấy người dùng");
     }
 
-    // Validate username (chỉ chứa chữ) nếu được cập nhật
+    // 2. Validate thông tin cơ bản
     if (name && !/^[a-zA-Z\s]+$/.test(name)) {
         return createResponse(res, 400, "Tên người dùng không hợp lệ (chỉ chứa chữ)");
     }
 
-    // Validate phone (10-11 chữ số) nếu được cập nhật
     if (phone && !/^[0-9]{10,11}$/.test(phone)) {
         return createResponse(res, 400, "Số điện thoại không hợp lệ (chỉ chứa 10-11 chữ số)");
     }
 
-    // Kiểm tra email đã tồn tại (nếu email được cập nhật)
     if (email && email !== user.email) {
         const existingUser = await User.findOne({ email });
         if (existingUser) {
@@ -137,7 +138,6 @@ export const updateUser = handleAsync(async (req, res) => {
         }
     }
 
-    // Kiểm tra username đã tồn tại (nếu username được cập nhật)
     if (name && name !== user.username) {
         const existingUsername = await User.findOne({ username: name });
         if (existingUsername) {
@@ -145,15 +145,38 @@ export const updateUser = handleAsync(async (req, res) => {
         }
     }
 
-    // Cập nhật các trường được cung cấp (KHÔNG cập nhật role)
+    // 3. LOGIC ĐỔI MẬT KHẨU AN TOÀN
+    if (newPassword) {
+        // Bắt buộc phải có mật khẩu hiện tại
+        if (!oldPassword) {
+            return createResponse(res, 400, "Vui lòng nhập mật khẩu hiện tại");
+        }
+
+        // Chặn lỗi nếu tài khoản chưa từng có mật khẩu
+        if (!user.password) {
+            return createResponse(res, 400, "Tài khoản này chưa thiết lập mật khẩu trong hệ thống");
+        }
+
+        // So sánh mật khẩu cũ bạn nhập với mã băm trong Database
+        const isMatch = await bcrypt.compare(oldPassword, user.password);
+        if (!isMatch) {
+            return createResponse(res, 400, "Mật khẩu hiện tại không chính xác");
+        }
+
+        // Băm (Mã hóa) mật khẩu mới trước khi lưu vào Database
+        user.password = await bcrypt.hash(newPassword, 10);
+    }
+
+    // 4. Cập nhật các trường thông tin cơ bản
     if (name) user.username = name;
     if (email) user.email = email;
     if (phone) user.phone = phone;
-    if (password) {
-        user.password = await bcrypt.hash(password, 10);
-    }
 
+    // 5. Lưu xuống Database
     const updatedUser = await user.save();
+
+    // 6. Xóa trường password khỏi kết quả trả về để bảo mật tuyệt đối
+    updatedUser.password = undefined;
 
     createResponse(res, 200, "Cập nhật người dùng thành công", updatedUser);
 });
