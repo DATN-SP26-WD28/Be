@@ -39,6 +39,12 @@ export const login = handleAsync(async (req, res) => {
   // Dòng này bạn đã viết đúng cấu trúc
   if (!isMatch) throw createError(res, 401, 'Mật khẩu không chính xác');
 
+  if (user.status === 'banned') {
+    return res.status(403).json({
+      message: "Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quản trị viên."
+    });
+  }
+
   const token = jwt.sign(
     { id: user._id, role: user.role },
     process.env.JWT_SECRET,
