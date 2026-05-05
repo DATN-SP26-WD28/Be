@@ -122,46 +122,27 @@ export const createUser = handleAsync(async (req, res) => {
 // 7. Admin cập nhật thông tin người dùng
 export const updateUser = handleAsync(async (req, res) => {
     const { id } = req.params;
-    // Bóc tách đúng các trường từ Payload (xem Ảnh màn hình 2026-05-06 lúc 00.25.58.png)
     const { username, email, phone, role, password } = req.body;
 
-    // 1. Kiểm tra người dùng tồn tại
-    const user = await User.findById(id);
-    if (!user) {
-        return createResponse(res, 404, "Không tìm thấy người dùng");
-    }
-
-    // 2. Chuẩn bị object chứa các dữ liệu muốn cập nhật
     const updateData = {};
-    
     if (username) updateData.username = username;
     if (email) updateData.email = email;
     if (phone) updateData.phone = phone;
-    
-    // ÉP CẬP NHẬT ROLE TẠI ĐÂY
-    if (role) {
-        updateData.role = role; 
-    }
+    if (role) updateData.role = role; // Bây giờ đã có thể update thoải mái
 
-    // 3. Xử lý mật khẩu nếu có nhập mới
     if (password && password.trim() !== "") {
         updateData.password = await bcrypt.hash(password, 10);
     }
 
-    // 4. SỬ DỤNG findByIdAndUpdate ĐỂ GHI ĐÈ TRỰC TIẾP
-    // { new: true } để trả về dữ liệu sau khi đã sửa
-    // { runValidators: true } để vẫn kiểm tra định dạng email/phone
     const updatedUser = await User.findByIdAndUpdate(
-        id, 
-        { $set: updateData }, 
+        id,
+        { $set: updateData },
         { new: true, runValidators: true }
     );
 
-    // 5. Trả về kết quả
-    const result = updatedUser.toObject();
-    delete result.password;
+    if (!updatedUser) return createResponse(res, 404, "Không tìm thấy người dùng");
 
-    createResponse(res, 200, "Cập nhật người dùng thành công", result);
+    createResponse(res, 200, "Cập nhật người dùng thành công", updatedUser);
 });
 
 // 8. Admin xóa người dùng

@@ -38,7 +38,6 @@ const userSchema = new mongoose.Schema({
       message: 'Vai trò người dùng không hợp lệ'
     },
     default: 'customer',
-    immutable: true
   },
   status: {
     type: String,
