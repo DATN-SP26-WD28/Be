@@ -122,29 +122,35 @@ export const createUser = handleAsync(async (req, res) => {
 // 7. Admin cập nhật thông tin người dùng
 export const updateUser = handleAsync(async (req, res) => {
     const { id } = req.params;
+    // Bóc tách đúng các trường từ Payload FE gửi lên
     const { username, email, phone, role, password } = req.body;
 
     const updateData = {};
     if (username) updateData.username = username;
     if (email) updateData.email = email;
     if (phone) updateData.phone = phone;
-    if (role) updateData.role = role; // Bây giờ đã có thể update thoải mái
+    
+    // Cập nhật role (Bây giờ đã có thể lưu vì đã xóa immutable)
+    if (role) updateData.role = role;
 
+    // Hash mật khẩu nếu có nhập mới
     if (password && password.trim() !== "") {
         updateData.password = await bcrypt.hash(password, 10);
     }
 
+    // Thực hiện cập nhật
     const updatedUser = await User.findByIdAndUpdate(
-        id,
-        { $set: updateData },
+        id, 
+        { $set: updateData }, 
         { new: true, runValidators: true }
     );
 
-    if (!updatedUser) return createResponse(res, 404, "Không tìm thấy người dùng");
+    if (!updatedUser) {
+        return createResponse(res, 404, "Không tìm thấy người dùng");
+    }
 
     createResponse(res, 200, "Cập nhật người dùng thành công", updatedUser);
 });
-
 // 8. Admin xóa người dùng
 export const deleteUser = handleAsync(async (req, res) => {
     const { id } = req.params;
