@@ -37,8 +37,12 @@ export const getMyOrders = handleAsync(async (req, res) => {
 
 // 4.1. Admin lấy tất cả khách hàng (role = customer)
 export const getCustomers = handleAsync(async (req, res) => {
-    const customers = await User.find({ role: 'customer' }).sort({ created_at: -1 });
-    createResponse(res, 200, "Lấy danh sách thành công", customers);
+    // Tìm tất cả User mà trường role nằm trong danh sách ['customer', 'staff']
+    const customers = await User.find({
+        role: { $in: ['customer', 'staff'] }
+    }).sort({ created_at: -1 });
+
+    createResponse(res, 200, "Lấy danh sách nhân viên và khách hàng thành công", customers);
 });
 
 // 4.2. Admin lấy tất cả người dùng (deprecated - dùng getStaff hoặc getCustomers)
@@ -129,7 +133,7 @@ export const updateUser = handleAsync(async (req, res) => {
     if (username) updateData.username = username;
     if (email) updateData.email = email;
     if (phone) updateData.phone = phone;
-    
+
     // Cập nhật role (Bây giờ đã có thể lưu vì đã xóa immutable)
     if (role) updateData.role = role;
 
@@ -140,8 +144,8 @@ export const updateUser = handleAsync(async (req, res) => {
 
     // Thực hiện cập nhật
     const updatedUser = await User.findByIdAndUpdate(
-        id, 
-        { $set: updateData }, 
+        id,
+        { $set: updateData },
         { new: true, runValidators: true }
     );
 
