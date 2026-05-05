@@ -122,9 +122,9 @@ export const createUser = handleAsync(async (req, res) => {
 // 7. Admin cập nhật thông tin người dùng
 export const updateUser = handleAsync(async (req, res) => {
     const { id } = req.params;
-    // 1. Thêm 'role' và 'password' vào danh sách bóc tách từ req.body
-    // Lưu ý: StaffForm gửi 'password', nên ta dùng 'password' thay cho 'newPassword' nếu cần đồng bộ
-    const { name, email, phone, oldPassword, newPassword, password, role } = req.body;
+
+    // 1. Đón đúng các trường từ Payload gửi lên: username, email, phone, role, password
+    const { username, email, phone, role, password, oldPassword } = req.body;
 
     const user = await User.findById(id).select('+password');
 
@@ -132,46 +132,45 @@ export const updateUser = handleAsync(async (req, res) => {
         return createResponse(res, 404, "Không tìm thấy người dùng");
     }
 
-    // 2. Validate thông tin (Giữ nguyên logic của bạn)
-    if (name && !/^[\p{L}\s]+$/u.test(name)) { // Dùng regex hỗ trợ tiếng Việt có dấu
-        return createResponse(res, 400, "Tên người dùng không hợp lệ");
-    }
-
-    if (phone && !/^[0-9]{10,11}$/.test(phone)) {
-        return createResponse(res, 400, "Số điện thoại không hợp lệ");
-    }
-
-    // 3. LOGIC CẬP NHẬT ROLE (Đây là phần bị thiếu)
-    // Chỉ cập nhật nếu role gửi lên nằm trong danh sách cho phép
-    const allowedRoles = ['customer', 'staff'];
-    if (role && allowedRoles.includes(role)) {
-        user.role = role;
-    }
-
-    // 4. LOGIC ĐỔI MẬT KHẨU
-    // Hỗ trợ cả trường hợp gửi 'password' (từ StaffForm) hoặc 'newPassword'
-    const actualNewPassword = password || newPassword;
-    
-    if (actualNewPassword) {
-        // Nếu là Admin/Quản lý đi sửa thì có thể không cần oldPassword (tùy nghiệp vụ)
-        // Nhưng nếu bạn muốn giữ logic an toàn:
-        if (oldPassword) {
-            const isMatch = await bcrypt.compare(oldPassword, user.password);
-            if (!isMatch) {
-                return createResponse(res, 400, "Mật khẩu hiện tại không chính xác");
-            }
+    // 2. Cập nhật ROLE (Quan trọng nhất - Đây là phần bạn đang thiếu)
+    if (role) {
+        const allowedRoles = ['customer', 'staff'];
+        if (allowedRoles.includes(role)) {
+            user.role = role;
         }
-        user.password = await bcrypt.hash(actualNewPassword, 10);
     }
 
-    // 5. Cập nhật các trường khác
-    if (name) user.username = name;
+    // 3. Validate và Cập nhật Username (Trong Payload bạn gửi là 'username')
+    if (username) {
+        // Regex hỗ trợ tiếng Việt có dấu
+        if (!/^[\p{L}\s]+$/u.test(username)) {
+            return createResponse(res, 400, "Tên người dùng không hợp lệ");
+        }
+
+        if (username !== user.username) {
+            const existingUsername = await User.findOne({ username });
+            if (existingUsername) {
+                return createResponse(res, 409, "Tên đăng nhập đã tồn tại");
+            }
+            user.username = username;
+        }
+    }
+
+    // 4. Cập nhật Email và Phone
     if (email) user.email = email;
     if (phone) user.phone = phone;
 
+    // 5. Logic Mật khẩu
+    if (password && password.trim() !== "") {
+        // Nếu bạn muốn bảo mật: kiểm tra oldPassword. 
+        // Nếu đây là Admin sửa nhân viên: có thể bỏ qua bước check oldPassword.
+        user.password = await bcrypt.hash(password, 10);
+    }
+
+    // 6. Lưu thay đổi
     const updatedUser = await user.save();
 
-    // Ẩn password khi trả về
+    // 7. Trả về kết quả (Xóa password cho an toàn)
     const result = updatedUser.toObject();
     delete result.password;
 
