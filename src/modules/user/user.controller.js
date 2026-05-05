@@ -65,14 +65,20 @@ export const toggleUserStatus = handleAsync(async (req, res) => {
 
 // 6. Admin tạo người dùng mới (Customer)
 export const createUser = handleAsync(async (req, res) => {
-    const { name, email, phone, password } = req.body;
+    // 1. Nhận thêm role từ req.body
+    const { name, email, phone, password, role } = req.body;
 
     // Kiểm tra các trường bắt buộc
     if (!name || !email || !phone) {
         return createResponse(res, 400, "Vui lòng cung cấp đầy đủ thông tin: name, email, phone");
     }
 
-    // Validate username (chỉ chứa chữ)
+    // 2. Validate role (Chỉ cho phép 'customer' hoặc 'staff')
+    // Nếu không truyền role, bạn có thể để mặc định là 'customer'
+    const allowedRoles = ['customer', 'staff'];
+    const finalRole = allowedRoles.includes(role) ? role : 'customer';
+
+    // Validate username (chỉ chứa chữ và khoảng trắng)
     if (name && !/^[\p{L}\s]+$/u.test(name)) {
         return createResponse(res, 400, "Tên người dùng không hợp lệ (chỉ chứa chữ cái)");
     }
@@ -98,17 +104,21 @@ export const createUser = handleAsync(async (req, res) => {
     const defaultPassword = password || '123456';
     const hashedPassword = await bcrypt.hash(defaultPassword, 10);
 
+    // 3. Sử dụng finalRole đã validate
     const newUser = await User.create({
-        username: name, // Map "name" từ frontend thành "username" ở backend
+        username: name,
         email,
         phone,
-        role: 'customer', // Luôn set role là customer
+        role: finalRole,
         password: hashedPassword
     });
 
-    createResponse(res, 201, "Tạo người dùng thành công", newUser);
-});
+    // Ẩn password trước khi trả về response
+    const userResponse = newUser.toObject();
+    delete userResponse.password;
 
+    createResponse(res, 201, "Tạo người dùng thành công", userResponse);
+});
 // 7. Admin cập nhật thông tin người dùng
 export const updateUser = handleAsync(async (req, res) => {
     const { id } = req.params;

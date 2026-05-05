@@ -34,7 +34,7 @@ const userSchema = new mongoose.Schema({
   role: {
     type: String,
     enum: {
-      values: ['customer', 'admin'],
+      values: ['customer', 'admin','staff'],
       message: 'Vai trò người dùng không hợp lệ'
     },
     default: 'customer',
